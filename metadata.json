@@ -1,0 +1,6 @@
+{
+  "name": "RobôCripto V5.3 - Dashboard Institutional",
+  "description": "Painel de controle, auditoria e simulação matemática do robô de negociação cripto V5.3 com gestão blindada de cofre e integração Supabase/Railway.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
