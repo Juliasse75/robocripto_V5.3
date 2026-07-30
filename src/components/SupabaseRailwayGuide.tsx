@@ -54,9 +54,16 @@ WHERE NOT EXISTS (SELECT 1 FROM public.capital_vault);
 ALTER TABLE public.trade_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.capital_vault ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Permitir leitura pública ou autenticada" ON public.trade_logs;
 CREATE POLICY "Permitir leitura pública ou autenticada" ON public.trade_logs FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Permitir inserção via service role/anon" ON public.trade_logs;
 CREATE POLICY "Permitir inserção via service role/anon" ON public.trade_logs FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir leitura do cofre" ON public.capital_vault;
 CREATE POLICY "Permitir leitura do cofre" ON public.capital_vault FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Permitir atualização do cofre" ON public.capital_vault;
 CREATE POLICY "Permitir atualização do cofre" ON public.capital_vault FOR ALL USING (true);
 `;
 
