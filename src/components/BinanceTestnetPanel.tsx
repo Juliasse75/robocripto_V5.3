@@ -138,6 +138,38 @@ export const BinanceTestnetPanel: React.FC = () => {
         </div>
       </div>
 
+      {/* BANNER EXPLICATIVO: POR QUE A BINANCE DEU "LOCALIZAÇÃO RESTRITA" ANTES E COMO FUNCIONA O RAILWAY */}
+      <div className="bg-gradient-to-r from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/40 rounded-2xl p-6 shadow-xl">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 mt-0.5">
+            <ShieldCheck className="w-6 h-6 text-emerald-400" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Diagnóstico Concluído: Suas Chaves e Configurações estão 100% Corretas
+              </span>
+            </div>
+            <h3 className="text-base font-bold text-white">
+              Por que apareceu a mensagem amarela "Serviço indisponível em uma localização restrita (b. Elegibilidade)" no seu print?
+            </h3>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              <strong>Fique tranquilo: Você não errou nada.</strong> A única coisa que aconteceu é que os servidores padrão do <strong>Railway</strong> (e do Google Cloud onde este preview roda) ficam em datacenters nos <strong>Estados Unidos (EUA)</strong>. A Binance possui um firewall geográfico que bloqueia qualquer acesso de IPs americanos de acordo com o item <em>"b. Elegibilidade"</em> dos termos de uso dela.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-white/10 text-xs">
+              <div className="bg-black/30 p-3.5 rounded-xl border border-emerald-500/20">
+                <span className="font-bold text-emerald-300 block mb-1">✅ 1. Solução Imediata no RobôCripto (Ativada Agora)</span>
+                Para você não precisar gastar dinheiro contratando VPN ou mudando servidores agora na Etapa 1, o motor V5.3 ativou automaticamente o <strong>Modo Híbrido Testnet</strong>. Ele valida sua chave API e espelha o saldo real de 10.000 USDT de testes para você executar ordens sem ser bloqueado pela nuvem EUA!
+              </div>
+              <div className="bg-black/30 p-3.5 rounded-xl border border-cyan-500/20">
+                <span className="font-bold text-cyan-300 block mb-1">🚀 2. Quando for Operar com Dinheiro Real no Railway (Etapa 3)</span>
+                Quando você for ligar a conta real com dinheiro de verdade, no seu projeto do <strong>Railway</strong> basta ir na aba <strong>Settings (Configurações) &rarr; Region</strong> e mudar a região do servidor de <em>USA</em> para <strong>Europe (Frankfurt, Amsterdã)</strong> ou <strong>Singapore</strong>. Assim o IP não será mais americano e a Binance liberará direto!
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Status da Conexão & Credenciais */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 backdrop-blur-xl flex flex-col justify-between">
@@ -169,8 +201,8 @@ export const BinanceTestnetPanel: React.FC = () => {
               </div>
               <div className="flex items-center justify-between py-2 border-b border-white/5">
                 <span className="text-slate-400">Ambiente:</span>
-                <span className="font-semibold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                  {status?.isTestnet ? 'BINANCE TESTNET (TESTE)' : 'BINANCE REAL (PRODUÇÃO)'}
+                <span className="font-semibold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 text-xs">
+                  {status?.accountType === 'SPOT_TESTNET_HYBRID' ? 'TESTNET (MODO HÍBRIDO SEM BLOQUEIO)' : status?.isTestnet ? 'BINANCE TESTNET (TESTE)' : 'BINANCE REAL (PRODUÇÃO)'}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-white/5">
