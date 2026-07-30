@@ -10,6 +10,11 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Health check endpoint
+  app.get(["/health", "/api/health"], (req, res) => {
+    res.json({ status: "ok", uptime: process.uptime() });
+  });
+
   // Mutable In-Memory State
   let capitalState: CapitalState = { ...INITIAL_CAPITAL };
   let botStatus: BotStatus = { ...INITIAL_BOT_STATUS };
