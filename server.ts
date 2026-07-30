@@ -4,6 +4,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { INITIAL_CAPITAL, INITIAL_BOT_STATUS, INITIAL_ACTIVE_POSITIONS, INITIAL_TRADE_LOGS, INITIAL_MARKET_SIGNALS } from "./src/data/mockData";
 import { CapitalState, TradeLog, ActivePosition, BotStatus, AuditSummary24h } from "./src/types";
+import { binanceService } from "./src/services/binance";
 
 async function startServer() {
   const app = express();
@@ -154,6 +155,31 @@ async function startServer() {
 
   app.get("/api/market-signals", (req, res) => {
     res.json(marketSignals);
+  });
+
+  // Endpoints da Binance Testnet / Produção
+  app.get("/api/binance/status", async (req, res) => {
+    const status = await binanceService.getAccountStatus();
+    res.json(status);
+  });
+
+  app.get("/api/binance/prices", async (req, res) => {
+    const symbols = (req.query.symbols as string || "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT").split(",");
+    const prices = await binanceService.getMultiplePrices(symbols);
+    res.json(prices);
+  });
+
+  app.post("/api/binance/order", async (req, res) => {
+    const { symbol, side, type, quantity, quoteOrderQty, price } = req.body;
+    const result = await binanceService.placeOrder({
+      symbol: symbol || "BTCUSDT",
+      side: side || "BUY",
+      type: type || "MARKET",
+      quantity,
+      quoteOrderQty,
+      price
+    });
+    res.json(result);
   });
 
   app.post("/api/bot/toggle", (req, res) => {

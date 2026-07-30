@@ -8,6 +8,7 @@ import { AnalyticsCharts } from './components/AnalyticsCharts';
 import { BotControlPanel } from './components/BotControlPanel';
 import { SupabaseRailwayGuide } from './components/SupabaseRailwayGuide';
 import { LoginModal } from './components/LoginModal';
+import { BinanceTestnetPanel } from './components/BinanceTestnetPanel';
 import {
   CapitalState,
   TradeLog,
@@ -222,6 +223,13 @@ export default function App() {
 
             {/* Performance & Equity Charts */}
             <AnalyticsCharts trades={trades} />
+          </div>
+        )}
+
+        {/* TAB: BINANCE TESTNET (ETAPA 1) */}
+        {activeTab === 'binance' && (
+          <div className="animate-fadeIn">
+            <BinanceTestnetPanel />
           </div>
         )}
 

@@ -56,6 +56,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide bg-white/10 text-slate-200 border border-white/15 rounded-full backdrop-blur-md">
                   Fogo Livre Blindado
                 </span>
+                <button
+                  onClick={() => setActiveTab('binance')}
+                  className="px-2.5 py-0.5 text-[10px] font-bold tracking-wide bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-full flex items-center gap-1.5 transition-all shadow-sm shadow-amber-500/10 cursor-pointer"
+                  title="Abrir painel da Binance Spot Testnet (Etapa 1)"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                  TESTNET BINANCE ATIVO
+                </button>
               </div>
               <p className="text-xs text-slate-400 flex items-center gap-2">
                 <span className="flex items-center gap-1.5">
@@ -166,6 +174,18 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Activity className="w-3.5 h-3.5" />
             Visão Geral & Cofre
+          </button>
+
+          <button
+            onClick={() => setActiveTab('binance')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-2 backdrop-blur-md ${
+              activeTab === 'binance'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-lg shadow-amber-500/10'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/10 border border-transparent'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            Binance Testnet (Etapa 1)
           </button>
 
           <button
