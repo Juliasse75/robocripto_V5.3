@@ -69,6 +69,30 @@ export default function App() {
     localStorage.setItem('robocripto_user_session', JSON.stringify(userSession));
   }, [userSession]);
 
+  // Sync capital ceiling with Binance Testnet allocation
+  useEffect(() => {
+    const applyAllocation = (allocatedCap: number) => {
+      if (!isNaN(allocatedCap) && allocatedCap > 0) {
+        setCapital(prev => ({
+          ...prev,
+          saldoLivre: allocatedCap,
+          patrimonioTotal: allocatedCap + prev.saldoEmPosicoes + prev.lucroNoCofre
+        }));
+      }
+    };
+
+    const savedAlloc = localStorage.getItem('ROBOCRIPTO_CAPITAL_TESTNET_ALLOC');
+    if (savedAlloc) applyAllocation(Number(savedAlloc));
+
+    const handleSync = (e: any) => {
+      const val = e.detail?.allocatedCap;
+      if (val) applyAllocation(Number(val));
+    };
+
+    window.addEventListener('ROBOCRIPTO_CAPITAL_SYNC', handleSync);
+    return () => window.removeEventListener('ROBOCRIPTO_CAPITAL_SYNC', handleSync);
+  }, []);
+
   // Fetch live stats from API
   const fetchDashboardData = async () => {
     setIsRefreshing(true);

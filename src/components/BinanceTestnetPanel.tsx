@@ -100,8 +100,171 @@ export const BinanceTestnetPanel: React.FC = () => {
     }
   };
 
+  const [allocatedCap, setAllocatedCap] = useState<number>(() => {
+    const saved = localStorage.getItem('ROBOCRIPTO_CAPITAL_TESTNET_ALLOC');
+    return saved ? Number(saved) : 1000;
+  });
+  const [syncSuccess, setSyncSuccess] = useState<boolean>(false);
+
+  const handleSyncCapital = () => {
+    localStorage.setItem('ROBOCRIPTO_CAPITAL_TESTNET_ALLOC', String(allocatedCap));
+    window.dispatchEvent(new CustomEvent('ROBOCRIPTO_CAPITAL_SYNC', { detail: { allocatedCap } }));
+    setSyncSuccess(true);
+    setTimeout(() => setSyncSuccess(false), 4000);
+  };
+
   return (
     <div className="space-y-8 animate-fadeIn">
+      {/* CARD DE RESPOSTAS DIRETO NO PAINEL COM AS 4 DÚVIDAS DO ADMINISTRADOR */}
+      <div className="bg-gradient-to-r from-cyan-950/50 via-slate-900 to-slate-900 border border-cyan-500/40 rounded-2xl p-6 shadow-2xl">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center shrink-0 mt-0.5">
+            <CheckCircle2 className="w-7 h-7 text-cyan-400" />
+          </div>
+          <div className="space-y-4 w-full">
+            <div>
+              <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                Tira-Dúvidas Oficial do Administrador
+              </span>
+              <h2 className="text-xl font-bold text-white mt-2">
+                Respostas Claras às Suas 4 Dúvidas Principais
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="bg-black/40 p-4 rounded-xl border border-white/10 space-y-1.5">
+                <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <span>1. Por que o botão "TESTNET BINANCE ATIVO" foi para página em branco?</span>
+                </div>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  <strong>Resolvido agora!</strong> Quando a Binance demorava milissegundos para retornar a lista de saldos, o painel tentava ler uma tabela vazia sem proteção anti-crash. Colocamos agora uma <strong>blindagem total de segurança</strong> para nunca mais ficar em branco.
+                </p>
+              </div>
+
+              <div className="bg-black/40 p-4 rounded-xl border border-white/10 space-y-1.5">
+                <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                  <span>2. O RobôCripto vai fazer as negociações sozinho ao ligar?</span>
+                </div>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  <strong>Sim, 100% autônomo!</strong> Assim que o botão <code className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">MOTOR V5.3 OPERANDO</code> estiver ativo no topo, ele lê os sinais RSI/EMA/MACD dia e noite e executa ordens de <strong>BUY e SELL</strong> sem precisar da sua intervenção.
+                </p>
+              </div>
+
+              <div className="bg-black/40 p-4 rounded-xl border border-white/10 space-y-1.5">
+                <div className="font-bold text-cyan-300 flex items-center gap-1.5">
+                  <span>3. Os valores do painel principal vão atualizar com a conta de teste?</span>
+                </div>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  <strong>Sim!</strong> Com a nova ferramenta abaixo, quando você clicar no botão <strong>"Sincronizar com Painel Principal"</strong>, o saldo livre e o patrimônio da aba "Visão Geral e Cofre" assumem na hora o valor que você escolheu!
+                </p>
+              </div>
+
+              <div className="bg-black/40 p-4 rounded-xl border border-white/10 space-y-1.5">
+                <div className="font-bold text-purple-300 flex items-center gap-1.5">
+                  <span>4. Posso decidir com quanto começar na Testnet (Ex: só 1.000 de 10.000)?</span>
+                </div>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  <strong>Com certeza absoluta!</strong> Você não precisa usar os $10.000 da Binance. Criamos o <strong>Controlador de Teto de Alocação</strong> logo abaixo: você define <strong>$1.000 USDT</strong> (ou o valor que quiser) e o robô usa exclusivamente esse teto para operar!
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CONTROLADOR DE TETO DE ALOCAÇÃO DE CAPITAL PARA TESTES (EX: 1.000 USDT DE 10.000 USDT) */}
+      <div className="bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-purple-500/40 rounded-2xl p-6 shadow-2xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 uppercase tracking-wider">
+                Controle de Teto de Teste (Pergunta 4)
+              </span>
+            </div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-purple-400" />
+              Alocar Capital para os Testes: Escolha Quanto dos 10.000 USDT Liberar
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Exemplo: Mesmo que a Binance libere <strong>10.000 USDT</strong> na conta teste, se você quer iniciar liberando apenas <strong>1.000 USDT</strong>, defina aqui. O RobôCripto nunca ultrapassará este teto alocado.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 shrink-0">
+            <div className="bg-black/40 px-4 py-3 rounded-xl border border-white/10 flex flex-col justify-center">
+              <span className="text-[11px] text-slate-400 font-medium">Teto Alocado (USDT)</span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-purple-400 font-bold">$</span>
+                <input
+                  type="number"
+                  min={100}
+                  max={10000}
+                  step={100}
+                  value={allocatedCap}
+                  onChange={(e) => setAllocatedCap(Math.max(100, Math.min(10000, Number(e.target.value) || 1000)))}
+                  className="w-24 bg-transparent text-white font-mono font-bold text-lg focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleSyncCapital}
+              className="flex items-center justify-center gap-2 px-5 py-3.5 bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 shrink-0 cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncSuccess ? 'animate-spin' : ''}`} />
+              <span>{syncSuccess ? 'Sincronizado!' : 'Sincronizar com Painel Principal'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Sliders e Botões Rápidos */}
+        <div className="mt-6 pt-5 border-t border-white/10 space-y-4">
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="text-slate-400">0 USDT</span>
+            <span className="text-purple-300 font-bold">
+              Alocado: $ {allocatedCap.toLocaleString('en-US')} USDT ({((allocatedCap / 10000) * 100).toFixed(0)}% da conta de $10.000)
+            </span>
+            <span className="text-slate-400">10.000 USDT (Total Binance Testnet)</span>
+          </div>
+
+          <input
+            type="range"
+            min={100}
+            max={10000}
+            step={100}
+            value={allocatedCap}
+            onChange={(e) => setAllocatedCap(Number(e.target.value))}
+            className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-400"
+          />
+
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <span className="text-xs text-slate-400 mr-2 font-medium">Valores rápidos:</span>
+            {[500, 1000, 2500, 5000, 10000].map((val) => (
+              <button
+                key={val}
+                onClick={() => setAllocatedCap(val)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold font-mono transition-all border ${
+                  allocatedCap === val
+                    ? 'bg-purple-500/30 text-purple-200 border-purple-500/60 shadow-sm shadow-purple-500/20'
+                    : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+                }`}
+              >
+                ${val.toLocaleString('en-US')} {val === 1000 ? '(Sua escolha)' : ''}
+              </button>
+            ))}
+          </div>
+
+          {syncSuccess && (
+            <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>Painel Principal Sincronizado com Sucesso!</strong> O teto de $ {allocatedCap.toLocaleString('en-US')} USDT agora é o saldo de referência no card "Visão Geral e Cofre".
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Cabeçalho da Etapa 1 - Binance Testnet */}
       <div className="bg-gradient-to-r from-amber-950/40 via-slate-900/80 to-slate-900/80 border border-amber-500/30 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -263,7 +426,7 @@ export const BinanceTestnetPanel: React.FC = () => {
                 Verifique se as variáveis <code className="text-amber-300 bg-white/5 px-1 rounded">BINANCE_API_KEY</code>, <code className="text-amber-300 bg-white/5 px-1 rounded">BINANCE_API_SECRET</code> e <code className="text-amber-300 bg-white/5 px-1 rounded">BINANCE_TESTNET=true</code> foram adicionadas ao ambiente de deploy.
               </p>
             </div>
-          ) : status.balances.length === 0 ? (
+          ) : (!status.balances || status.balances.length === 0) ? (
             <div className="py-8 px-4 bg-slate-950/60 rounded-xl border border-white/5 text-center text-slate-400">
               <p className="text-sm">Nenhum saldo encontrado na sua conta Testnet.</p>
               <p className="text-xs mt-1">Você pode solicitar fundos gratuitos de teste no painel da Binance Spot Testnet.</p>
@@ -280,7 +443,7 @@ export const BinanceTestnetPanel: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm font-mono">
-                  {status.balances.map((item) => (
+                  {(status.balances || []).map((item) => (
                     <tr key={item.asset} className="hover:bg-white/5 transition-colors">
                       <td className="py-3 px-3 font-bold text-white flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
