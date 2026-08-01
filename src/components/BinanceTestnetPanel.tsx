@@ -143,10 +143,10 @@ export const BinanceTestnetPanel: React.FC = () => {
 
               <div className="bg-black/40 p-4 rounded-xl border border-white/10 space-y-1.5">
                 <div className="font-bold text-emerald-300 flex items-center gap-1.5">
-                  <span>2. O RobôCripto vai fazer as negociações sozinho ao ligar?</span>
+                  <span>2. O RobôCripto já opera 100% autônomo na Binance?</span>
                 </div>
                 <p className="text-slate-300 text-xs leading-relaxed">
-                  <strong>Sim, 100% autônomo!</strong> Assim que o botão <code className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">MOTOR V5.3 OPERANDO</code> estiver ativo no topo, ele lê os sinais RSI/EMA/MACD dia e noite e executa ordens de <strong>BUY e SELL</strong> sem precisar da sua intervenção.
+                  <strong>Transparência de Auditoria:</strong> O conector atual autentica chaves reais, lê saldo e envia ordens teste na Binance Testnet. O motor algorítmico (<code className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">CriptoV5_3.py</code>) opera com estratégia real sobre sinais RSI/EMA/ATR, e está sendo acoplado ao backend para automação contínua 100% autônoma na testnet oficial.
                 </p>
               </div>
 

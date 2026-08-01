@@ -24,9 +24,14 @@ async function startServer() {
   let tradeLogs: TradeLog[] = [...INITIAL_TRADE_LOGS];
   let marketSignals = [...INITIAL_MARKET_SIGNALS];
 
-  // Auth credentials (in real production, password can be configured via ENV)
+  // Auth credentials configured via Environment Variables (sem senhas hardcoded em código)
   const AUTH_USER = process.env.ADMIN_USER || "admin";
-  const AUTH_PASS = process.env.ADMIN_PASS || "logusq2026";
+  const AUTH_PASS = process.env.ADMIN_PASS;
+  const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+
+  if (!AUTH_PASS && process.env.NODE_ENV === "production") {
+    console.warn("[AVISO DE AUDITORIA] ADMIN_PASS não configurado no .env em produção.");
+  }
 
   // Helper to recalculate 24h audit metrics
   function calculate24hAudit(): AuditSummary24h {
@@ -296,8 +301,8 @@ async function startServer() {
   // Webhook for Python Bot (Railway -> Dashboard / Supabase Sync)
   app.post("/api/webhook/trade-log", (req, res) => {
     const { secret, trade } = req.body;
-    if (secret !== (process.env.WEBHOOK_SECRET || "logusq_secret_2026")) {
-      return res.status(403).json({ error: "Webhook secret inválido" });
+    if (!WEBHOOK_SECRET || secret !== WEBHOOK_SECRET) {
+      return res.status(403).json({ error: "Webhook secret inválido ou não configurado" });
     }
 
     if (trade) {

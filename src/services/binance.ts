@@ -146,37 +146,7 @@ export class BinanceService {
           // ignore
         }
 
-        // Detectar bloqueio geográfico (EUA/Railway/Google Cloud US) do firewall da Binance
-        const isGeoBlock = errorMsg.includes("localização restrita") || 
-                           errorMsg.includes("restricted location") || 
-                           errorMsg.includes("Elegibilidade") || 
-                           errorMsg.includes("Eligibility") || 
-                           errorMsg.includes("451") || 
-                           errorMsg.includes("403") ||
-                           errorMsg.includes("Service unavailable");
-
-        if (isGeoBlock) {
-          return {
-            isConnected: true,
-            isTestnet,
-            hasKeys: true,
-            apiKeyMasked,
-            canTrade: true,
-            canWithdraw: false,
-            canDeposit: true,
-            accountType: "SPOT_TESTNET_HYBRID",
-            updateTime: new Date().toLocaleTimeString("pt-BR"),
-            balances: [
-              { asset: "USDT", free: "10000.000000", locked: "0.000000", totalUSDT: 10000 },
-              { asset: "BTC", free: "1.250000", locked: "0.150000", totalUSDT: 84375 },
-              { asset: "ETH", free: "15.400000", locked: "0.000000", totalUSDT: 53900 },
-              { asset: "SOL", free: "45.000000", locked: "0.000000", totalUSDT: 8100 },
-              { asset: "BNB", free: "20.000000", locked: "0.000000", totalUSDT: 11600 }
-            ],
-            totalWalletBalanceUSDT: 167975.00,
-            message: `Chaves HMAC válidas e autenticadas no Railway! (A Binance bloqueou o IP dos EUA do servidor no item b. Elegibilidade; o RobôCripto ativou o Modo Híbrido Testnet com sua chave para testes 100% livres de bloqueio!)`
-          };
-        }
+        // Exibição honesta do erro real da Binance (sem fallback de saldo fictício)
 
         return {
           isConnected: false,
@@ -308,29 +278,10 @@ export class BinanceService {
       const data = await response.json();
 
       if (!response.ok) {
-        const isGeoBlock = (data.msg || "").includes("localização restrita") || 
-                           (data.msg || "").includes("restricted location") || 
-                           (data.msg || "").includes("Elegibilidade") || 
-                           (data.msg || "").includes("Eligibility") ||
-                           (data.msg || "").includes("451") ||
-                           (data.msg || "").includes("403") ||
-                           (data.msg || "").includes("Service unavailable");
-
-        if (isGeoBlock) {
-          const mockId = Math.floor(10000000 + Math.random() * 90000000);
-          return {
-            success: true,
-            orderId: mockId,
-            executedQty: params.quantity ? String(params.quantity) : "0.00025",
-            cummulativeQuoteQty: params.quoteOrderQty ? String(params.quoteOrderQty) : "15.00",
-            message: `Ordem ${params.side} ${params.symbol} executada no Modo Híbrido Testnet (Bypass automático do bloqueio de IP EUA da nuvem)! ID: #BNB-HYB-${mockId}`
-          };
-        }
-
         return {
           success: false,
           error: data.msg || "Erro na execução da ordem",
-          message: `Erro da Binance (${data.code}): ${data.msg}`
+          message: `Erro da Binance (${data.code || response.status}): ${data.msg || "Falha na requisição"}`
         };
       }
 
