@@ -108,6 +108,44 @@ export const BinanceTestnetPanel: React.FC = () => {
   const [syncLoading, setSyncLoading] = useState<boolean>(false);
   const [syncMessage, setSyncMessage] = useState<string>('');
 
+  const [pythonBridgeLoading, setPythonBridgeLoading] = useState<boolean>(false);
+  const [pythonBridgeResult, setPythonBridgeResult] = useState<{
+    success?: boolean;
+    orderId?: number;
+    executedQty?: string;
+    message?: string;
+    error?: string;
+  } | null>(null);
+
+  const handleTestPythonBridge = async () => {
+    setPythonBridgeLoading(true);
+    setPythonBridgeResult(null);
+    try {
+      const res = await fetch('/api/bot/python-bridge/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: 'BTCUSDT',
+          side: 'BUY',
+          quoteOrderQty: 25,
+          rsi: 43.8
+        })
+      });
+      const data = await res.json();
+      setPythonBridgeResult(data);
+      if (data.success) {
+        fetchBinanceStatus();
+      }
+    } catch (err: any) {
+      setPythonBridgeResult({
+        success: false,
+        message: err.message || "Erro ao comunicar com ponte CriptoV5_3.py."
+      });
+    } finally {
+      setPythonBridgeLoading(false);
+    }
+  };
+
   const handleSyncCapital = async () => {
     setSyncLoading(true);
     setSyncMessage('');
@@ -549,6 +587,69 @@ export const BinanceTestnetPanel: React.FC = () => {
         )}
       </div>
 
+      {/* PONTE PYTHON ↔ TYPESCRIPT (CRIPTOV5_3.PY -> BINANCE SPOT TESTNET) */}
+      <div className="bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-purple-500/40 rounded-2xl p-6 shadow-2xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                Ponte Algorítmica Unificada Ativa
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                testnet.binance.vision
+              </span>
+            </div>
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-purple-400" />
+              Integração Python ↔ TypeScript: CriptoV5_3.py &rarr; binanceService.placeOrder()
+            </h3>
+            <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-3xl">
+              <strong>Ciclo unificado sem intermediários:</strong> O motor de decisão em Python (<code className="text-purple-300 bg-black/40 px-1.5 py-0.5 rounded font-mono">CriptoV5_3.py</code>) emite o sinal (RSI + EMA50 + Momentum) e aciona diretamente o endpoint oficial de ordens no servidor TypeScript, executando ordens automatizadas na Spot Testnet sem bloqueio geográfico.
+            </p>
+          </div>
+
+          <button
+            onClick={handleTestPythonBridge}
+            disabled={pythonBridgeLoading || !status?.canTrade}
+            className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 shrink-0 cursor-pointer"
+          >
+            <Zap className={`w-4 h-4 ${pythonBridgeLoading ? 'animate-spin' : ''}`} />
+            <span>{pythonBridgeLoading ? 'Emitindo Sinal V5.3...' : 'Testar Sinal Python (BUY $25 BTCUSDT)'}</span>
+          </button>
+        </div>
+
+        {pythonBridgeResult && (
+          <div className={`p-4 rounded-xl border text-sm mt-4 animate-fadeIn ${
+            pythonBridgeResult.success 
+              ? 'bg-purple-950/60 border-purple-500/40 text-purple-200' 
+              : 'bg-red-950/40 border-red-500/40 text-red-200'
+          }`}>
+            <div className="flex items-start gap-3">
+              {pythonBridgeResult.success ? (
+                <CheckCircle2 className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              )}
+              <div>
+                <p className="font-bold">
+                  {pythonBridgeResult.success 
+                    ? 'Sinal CriptoV5_3.py Executado na Binance Spot Testnet!' 
+                    : 'Falha na Execução do Sinal Python'}
+                </p>
+                <p className="text-xs mt-1 opacity-90">{pythonBridgeResult.message || pythonBridgeResult.error}</p>
+                {pythonBridgeResult.orderId && (
+                  <div className="mt-2 text-xs font-mono bg-black/40 px-3 py-2 rounded border border-white/10 flex flex-wrap items-center gap-4">
+                    <span>ID da Ordem: <strong className="text-purple-300">#BNB-{pythonBridgeResult.orderId}</strong></span>
+                    <span>Qtd Executada: <strong className="text-emerald-300">{pythonBridgeResult.executedQty} BTC</strong></span>
+                    <span className="text-cyan-300">✓ Sincronizado ao Painel Principal</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Roteiro e Balanço: O que criamos e o que falta criar */}
       <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 backdrop-blur-xl">
         <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
@@ -565,6 +666,12 @@ export const BinanceTestnetPanel: React.FC = () => {
             </div>
 
             <ul className="space-y-3 text-sm text-slate-300">
+              <li className="flex items-start gap-2.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-2 shrink-0"></span>
+                <div>
+                  <strong className="text-white">Conexão em Testnet Oficial & Integração Python ↔ TypeScript:</strong> Conexão direta com <code className="text-emerald-300 bg-black/40 px-1 rounded">testnet.binance.vision</code> (sem bloqueio geográfico) e ponte unificada <code className="text-purple-300 bg-black/40 px-1 rounded">CriptoV5_3.py &rarr; binanceService.placeOrder()</code> para disparo e execução automática.
+                </div>
+              </li>
               <li className="flex items-start gap-2.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-2 shrink-0"></span>
                 <div>

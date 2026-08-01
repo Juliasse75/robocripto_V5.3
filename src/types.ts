@@ -13,7 +13,7 @@ export interface CapitalState {
   winRate24h: number;
 }
 
-export type ExitType = 'TAKE_PROFIT' | 'STOP_LOSS' | 'RESGATE_GRID' | 'SAQUE_SEXTA' | 'FECHAMENTO_MANUAL';
+export type ExitType = 'TAKE_PROFIT' | 'STOP_LOSS' | 'RESGATE_GRID' | 'SAQUE_SEXTA' | 'FECHAMENTO_MANUAL' | 'ENTRADA_PYTHON_V53' | 'TAKE_PROFIT_PYTHON_V53' | 'COMPRA_V53';
 
 export interface TradeLog {
   id: string;
