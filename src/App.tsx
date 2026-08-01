@@ -131,12 +131,28 @@ export default function App() {
 
   useEffect(() => {
     fetchDashboardData();
+    const handleRefresh = () => {
+      fetchDashboardData();
+    };
+    window.addEventListener('ROBOCRIPTO_REFRESH_DASHBOARD', handleRefresh);
     // Poll stats every 15s to simulate live trading tick loop
     const interval = setInterval(() => {
       fetchDashboardData();
     }, 15000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('ROBOCRIPTO_REFRESH_DASHBOARD', handleRefresh);
+    };
   }, [selectedTimeframe]);
+
+  const handleClearPositions = async () => {
+    try {
+      await fetch('/api/bot/clear-positions', { method: 'POST' });
+      fetchDashboardData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleLogout = () => {
     setUserSession({ isAuthenticated: false, username: '' });
@@ -243,7 +259,7 @@ export default function App() {
             <CapitalCards capital={capital} onOpenSweepModal={handleSweepVault} />
 
             {/* Active Trading Positions */}
-            <PositionsTable positions={positions} />
+            <PositionsTable positions={positions} onClearPositions={handleClearPositions} />
 
             {/* Performance & Equity Charts */}
             <AnalyticsCharts trades={trades} />

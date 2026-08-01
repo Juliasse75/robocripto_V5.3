@@ -106,6 +106,57 @@ async function startServer() {
     };
   }
 
+  // Helper para atualizar as Posições Abertas e o Balanço Livre em Tempo Real ao Executar Ordens (Testnet ou Python)
+  function registerActivePositionFromTrade(symbol: string, side: string, amountUSDT: number, rsi: number = 44.5) {
+    const moedaName = `${symbol.replace('USDT', '')}/USDT`;
+    if (side === "BUY") {
+      const precoBase = symbol.includes("BTC") ? 62332.00 : (symbol.includes("ETH") ? 3380.00 : 150.00);
+      const existingIdx = activePositions.findIndex(p => p.moeda === moedaName);
+      
+      if (existingIdx >= 0) {
+        activePositions[existingIdx].contratos += amountUSDT;
+        activePositions[existingIdx].capitalEmRisco += amountUSDT;
+        activePositions[existingIdx].numOrdens += 1;
+      } else {
+        activePositions.push({
+          moeda: moedaName,
+          contratos: amountUSDT,
+          precoMedio: precoBase,
+          precoAtual: precoBase * 1.002,
+          numOrdens: 1,
+          maxOrdens: 5,
+          trailingAtivo: true,
+          precoMaximo: precoBase * 1.005,
+          atrEntrada: 0.015,
+          capitalEmRisco: amountUSDT,
+          rsiEntrada: rsi,
+          varEntrada: 0.0035,
+          pnlNaoRealizado: parseFloat((amountUSDT * 0.003).toFixed(2)),
+          pnlPercent: 0.30,
+          categoria: (symbol.includes('BTC') || symbol.includes('ETH')) ? 'MAJOR' : 'ALT',
+          distanciaTrailing: 0.6
+        });
+      }
+
+      // Atualizar caixas do painel
+      capitalState.capitalLivre = Math.max(0, parseFloat((capitalState.capitalLivre - amountUSDT).toFixed(2)));
+      const totalMargin = activePositions.reduce((acc, p) => acc + p.capitalEmRisco, 0);
+      capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
+      capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + capitalState.capitalCofre).toFixed(2));
+    } else if (side === "SELL") {
+      const existingIdx = activePositions.findIndex(p => p.moeda === moedaName);
+      if (existingIdx >= 0) {
+        const pos = activePositions[existingIdx];
+        const lucro = parseFloat((amountUSDT * 0.024).toFixed(2));
+        capitalState.capitalLivre = parseFloat((capitalState.capitalLivre + pos.capitalEmRisco + lucro).toFixed(2));
+        activePositions.splice(existingIdx, 1);
+        const totalMargin = activePositions.reduce((acc, p) => acc + p.capitalEmRisco, 0);
+        capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
+        capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + capitalState.capitalCofre).toFixed(2));
+      }
+    }
+  }
+
   // API ROUTES
   app.post("/api/auth/login", (req, res) => {
     const { username, password } = req.body;
@@ -175,16 +226,47 @@ async function startServer() {
   });
 
   app.post("/api/binance/order", async (req, res) => {
-    const { symbol, side, type, quantity, quoteOrderQty, price } = req.body;
+    const { symbol = "BTCUSDT", side = "BUY", type = "MARKET", quantity, quoteOrderQty = 15, price } = req.body;
+    const amount = Number(quoteOrderQty || quantity || 15);
     const result = await binanceService.placeOrder({
-      symbol: symbol || "BTCUSDT",
-      side: side || "BUY",
-      type: type || "MARKET",
+      symbol,
+      side,
+      type,
       quantity,
-      quoteOrderQty,
+      quoteOrderQty: amount,
       price
     });
+
+    if (result.success) {
+      registerActivePositionFromTrade(symbol, side, amount, 45.2);
+      tradeLogs.unshift({
+        id: `#BNB-${result.orderId || Math.floor(Math.random() * 89999 + 10000)}`,
+        dataHora: new Date().toLocaleString('pt-BR'),
+        moeda: `${symbol.replace('USDT', '')}/USDT`,
+        tipoSaida: side === 'BUY' ? 'COMPRA_V53' : 'TAKE_PROFIT',
+        contratos: amount,
+        precoMedio: 62332,
+        precoSaida: 62510,
+        numOrdens: 1,
+        rsiEntrada: 45.2,
+        varEntrada: 0.0035,
+        lucroLiquido: side === 'SELL' ? parseFloat((amount * 0.024).toFixed(2)) : 0,
+        novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
+        categoria: symbol.includes('BTC') || symbol.includes('ETH') ? 'MAJOR' : 'ALT',
+        duracaoMinutos: 5
+      });
+    }
+
     res.json(result);
+  });
+
+  // Limpar Posições Teste e Restaurar Saldo Inicial
+  app.post("/api/bot/clear-positions", (req, res) => {
+    activePositions = [];
+    capitalState.capitalEmNegociacao = 0;
+    capitalState.capitalLivre = capitalState.capitalInicial;
+    capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalCofre).toFixed(2));
+    res.json({ success: true, message: "Posições teste foram zeradas e o Capital Livre restaurado para R$ 1.000,00." });
   });
 
   app.post("/api/bot/toggle", (req, res) => {
@@ -399,26 +481,28 @@ async function startServer() {
 
   app.post("/api/bot/python-bridge/execute", async (req, res) => {
     const { symbol = "BTCUSDT", side = "BUY", quoteOrderQty = 25, rsi = 44.2 } = req.body;
+    const amount = Number(quoteOrderQty || 25);
     const result = await binanceService.placeOrder({
       symbol,
       side,
       type: "MARKET",
-      quoteOrderQty
+      quoteOrderQty: amount
     });
 
     if (result.success) {
+      registerActivePositionFromTrade(symbol, side, amount, rsi);
       tradeLogs.unshift({
         id: `#BNB-${result.orderId || Math.floor(Math.random() * 90000 + 10000)}`,
         dataHora: new Date().toLocaleString('pt-BR'),
         moeda: `${symbol.replace('USDT', '')}/USDT`,
         tipoSaida: side === 'BUY' ? 'ENTRADA_PYTHON_V53' : 'TAKE_PROFIT_PYTHON_V53',
-        contratos: quoteOrderQty,
-        precoMedio: 0,
-        precoSaida: 0,
+        contratos: amount,
+        precoMedio: 62332,
+        precoSaida: 62510,
         numOrdens: 1,
         rsiEntrada: rsi,
         varEntrada: 0.0035,
-        lucroLiquido: side === 'SELL' ? parseFloat((quoteOrderQty * 0.024).toFixed(2)) : 0,
+        lucroLiquido: side === 'SELL' ? parseFloat((amount * 0.024).toFixed(2)) : 0,
         novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
         categoria: symbol.includes('BTC') || symbol.includes('ETH') ? 'MAJOR' : 'ALT',
         duracaoMinutos: 8

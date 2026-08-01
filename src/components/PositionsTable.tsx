@@ -4,9 +4,10 @@ import { Layers, Shield, TrendingUp, TrendingDown, ArrowUpRight, Flame, Target, 
 
 interface PositionsTableProps {
   positions: ActivePosition[];
+  onClearPositions?: () => void;
 }
 
-export const PositionsTable: React.FC<PositionsTableProps> = ({ positions }) => {
+export const PositionsTable: React.FC<PositionsTableProps> = ({ positions, onClearPositions }) => {
   if (positions.length === 0) {
     return (
       <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-8 text-center text-slate-400 shadow-2xl">
@@ -29,9 +30,19 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ positions }) => 
             {positions.length} / 10 ativas
           </span>
         </div>
-        <span className="text-xs text-slate-400 font-medium hidden sm:inline">
-          Alavancagem: <strong className="text-white">10x Futuros</strong>
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400 font-medium hidden sm:inline">
+            Alavancagem: <strong className="text-white">10x Futuros</strong>
+          </span>
+          {onClearPositions && (
+            <button
+              onClick={onClearPositions}
+              className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Zerar Posições Teste
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto">

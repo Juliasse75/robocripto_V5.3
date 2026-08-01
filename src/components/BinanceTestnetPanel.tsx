@@ -89,6 +89,7 @@ export const BinanceTestnetPanel: React.FC = () => {
       setOrderResult(data);
       if (data.success) {
         fetchBinanceStatus();
+        window.dispatchEvent(new CustomEvent('ROBOCRIPTO_REFRESH_DASHBOARD'));
       }
     } catch (err: any) {
       setOrderResult({
@@ -97,6 +98,20 @@ export const BinanceTestnetPanel: React.FC = () => {
       });
     } finally {
       setOrderLoading(false);
+    }
+  };
+
+  const [clearing, setClearing] = useState(false);
+  const handleClearTestPositions = async () => {
+    setClearing(true);
+    try {
+      await fetch('/api/bot/clear-positions', { method: 'POST' });
+      fetchBinanceStatus();
+      window.dispatchEvent(new CustomEvent('ROBOCRIPTO_REFRESH_DASHBOARD'));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -135,6 +150,7 @@ export const BinanceTestnetPanel: React.FC = () => {
       setPythonBridgeResult(data);
       if (data.success) {
         fetchBinanceStatus();
+        window.dispatchEvent(new CustomEvent('ROBOCRIPTO_REFRESH_DASHBOARD'));
       }
     } catch (err: any) {
       setPythonBridgeResult({
@@ -549,14 +565,24 @@ export const BinanceTestnetPanel: React.FC = () => {
             </p>
           </div>
 
-          <button
-            onClick={handleTestOrder}
-            disabled={orderLoading || !status?.canTrade}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20 shrink-0"
-          >
-            <Zap className="w-4 h-4" />
-            <span>{orderLoading ? 'Enviando Ordem Testnet...' : 'Executar Ordem Teste (BUY 15 USDT - BTC)'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleClearTestPositions}
+              disabled={clearing}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-white/10 text-xs shrink-0"
+            >
+              <span>{clearing ? 'Zerando...' : 'Zerar Posições Teste'}</span>
+            </button>
+
+            <button
+              onClick={handleTestOrder}
+              disabled={orderLoading || !status?.canTrade}
+              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20 shrink-0"
+            >
+              <Zap className="w-4 h-4" />
+              <span>{orderLoading ? 'Enviando Ordem Testnet...' : 'Executar Ordem Teste (BUY 15 USDT - BTC)'}</span>
+            </button>
+          </div>
         </div>
 
         {orderResult && (
@@ -608,14 +634,24 @@ export const BinanceTestnetPanel: React.FC = () => {
             </p>
           </div>
 
-          <button
-            onClick={handleTestPythonBridge}
-            disabled={pythonBridgeLoading || !status?.canTrade}
-            className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 shrink-0 cursor-pointer"
-          >
-            <Zap className={`w-4 h-4 ${pythonBridgeLoading ? 'animate-spin' : ''}`} />
-            <span>{pythonBridgeLoading ? 'Emitindo Sinal V5.3...' : 'Testar Sinal Python (BUY $25 BTCUSDT)'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleClearTestPositions}
+              disabled={clearing}
+              className="flex items-center gap-1.5 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all border border-white/10 text-xs shrink-0 cursor-pointer"
+            >
+              <span>{clearing ? 'Zerando...' : 'Zerar Posições Teste'}</span>
+            </button>
+
+            <button
+              onClick={handleTestPythonBridge}
+              disabled={pythonBridgeLoading || !status?.canTrade}
+              className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 shrink-0 cursor-pointer"
+            >
+              <Zap className={`w-4 h-4 ${pythonBridgeLoading ? 'animate-spin' : ''}`} />
+              <span>{pythonBridgeLoading ? 'Emitindo Sinal V5.3...' : 'Testar Sinal Python (BUY $25 BTCUSDT)'}</span>
+            </button>
+          </div>
         </div>
 
         {pythonBridgeResult && (
