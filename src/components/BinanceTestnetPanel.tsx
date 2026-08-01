@@ -105,12 +105,42 @@ export const BinanceTestnetPanel: React.FC = () => {
     return saved ? Number(saved) : 1000;
   });
   const [syncSuccess, setSyncSuccess] = useState<boolean>(false);
+  const [syncLoading, setSyncLoading] = useState<boolean>(false);
+  const [syncMessage, setSyncMessage] = useState<string>('');
 
-  const handleSyncCapital = () => {
-    localStorage.setItem('ROBOCRIPTO_CAPITAL_TESTNET_ALLOC', String(allocatedCap));
-    window.dispatchEvent(new CustomEvent('ROBOCRIPTO_CAPITAL_SYNC', { detail: { allocatedCap } }));
-    setSyncSuccess(true);
-    setTimeout(() => setSyncSuccess(false), 4000);
+  const handleSyncCapital = async () => {
+    setSyncLoading(true);
+    setSyncMessage('');
+    try {
+      const res = await fetch('/api/bot/sync-binance-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      let targetCap = allocatedCap;
+      if (data.success && data.balance > 0) {
+        targetCap = data.balance;
+        setAllocatedCap(targetCap);
+        setSyncMessage(`Saldo Binance Testnet ($${targetCap.toLocaleString('en-US')} USDT) sincronizado com o Painel Principal!`);
+      } else {
+        setSyncMessage(`Capital alocado de $${allocatedCap.toLocaleString('en-US')} USDT sincronizado com o painel.`);
+      }
+      localStorage.setItem('ROBOCRIPTO_CAPITAL_TESTNET_ALLOC', String(targetCap));
+      window.dispatchEvent(new CustomEvent('ROBOCRIPTO_CAPITAL_SYNC', { detail: { allocatedCap: targetCap } }));
+      setSyncSuccess(true);
+      setTimeout(() => {
+        setSyncSuccess(false);
+        setSyncMessage('');
+      }, 5000);
+    } catch (err) {
+      localStorage.setItem('ROBOCRIPTO_CAPITAL_TESTNET_ALLOC', String(allocatedCap));
+      window.dispatchEvent(new CustomEvent('ROBOCRIPTO_CAPITAL_SYNC', { detail: { allocatedCap } }));
+      setSyncMessage(`Capital alocado de $${allocatedCap.toLocaleString('en-US')} USDT sincronizado.`);
+      setSyncSuccess(true);
+      setTimeout(() => setSyncSuccess(false), 4000);
+    } finally {
+      setSyncLoading(false);
+    }
   };
 
   return (
@@ -209,10 +239,11 @@ export const BinanceTestnetPanel: React.FC = () => {
 
             <button
               onClick={handleSyncCapital}
-              className="flex items-center justify-center gap-2 px-5 py-3.5 bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 shrink-0 cursor-pointer"
+              disabled={syncLoading}
+              className="flex items-center justify-center gap-2 px-5 py-3.5 bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-purple-500/20 shrink-0 cursor-pointer disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${syncSuccess ? 'animate-spin' : ''}`} />
-              <span>{syncSuccess ? 'Sincronizado!' : 'Sincronizar com Painel Principal'}</span>
+              <RefreshCw className={`w-4 h-4 ${syncLoading || syncSuccess ? 'animate-spin' : ''}`} />
+              <span>{syncLoading ? 'Sincronizando...' : syncSuccess ? 'Sincronizado!' : 'Sincronizar com Painel Principal'}</span>
             </button>
           </div>
         </div>
@@ -258,7 +289,7 @@ export const BinanceTestnetPanel: React.FC = () => {
             <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2 animate-fadeIn">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                <strong>Painel Principal Sincronizado com Sucesso!</strong> O teto de $ {allocatedCap.toLocaleString('en-US')} USDT agora é o saldo de referência no card "Visão Geral e Cofre".
+                <strong>Painel Principal Sincronizado!</strong> {syncMessage || `O teto de $ ${allocatedCap.toLocaleString('en-US')} USDT agora é o saldo de referência no card "Visão Geral e Cofre".`}
               </span>
             </div>
           )}

@@ -234,6 +234,34 @@ async function startServer() {
     }
   });
 
+  // Sync Real Binance Wallet Balance with Main Dashboard Capital
+  app.post("/api/bot/sync-binance-balance", async (req, res) => {
+    try {
+      const status = await binanceService.getAccountStatus();
+      if (status.isConnected && status.totalWalletBalanceUSDT > 0) {
+        const realBalance = status.totalWalletBalanceUSDT;
+        capitalState.capitalInicial = realBalance;
+        capitalState.capitalLivre = realBalance;
+        capitalState.baseCalculoDia = realBalance;
+        return res.json({
+          success: true,
+          capitalState,
+          balance: realBalance,
+          message: `Saldo Binance Spot Testnet ($${realBalance.toLocaleString('en-US')}) sincronizado com o Painel Principal!`
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: "Não foi possível obter saldo real da Binance. Verifique suas chaves de API e conexão Testnet."
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        message: err.message || "Erro ao sincronizar saldo."
+      });
+    }
+  });
+
   // Simulate a live trading tick or trade event for demonstration / test
   app.post("/api/bot/simulate-tick", (req, res) => {
     const { action } = req.body; // 'take_profit' | 'stop_loss' | 'grid_add' | 'btc_crash'
