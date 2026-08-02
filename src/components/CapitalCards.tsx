@@ -8,7 +8,22 @@ interface CapitalCardsProps {
 }
 
 export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweepModal }) => {
-  const isVaultPopulated = capital.capitalCofre > 0;
+  const capInicial = !isNaN(Number(capital.capitalInicial)) && Number(capital.capitalInicial) > 0 ? Number(capital.capitalInicial) : 1000;
+  const capNeg = !isNaN(Number(capital.capitalEmNegociacao)) ? Number(capital.capitalEmNegociacao) : 0;
+  const capLivre = !isNaN(Number(capital.capitalLivre)) ? Number(capital.capitalLivre) : capInicial;
+  const capCofre = !isNaN(Number(capital.capitalCofre)) ? Number(capital.capitalCofre) : 0;
+  const patTotal = !isNaN(Number(capital.patrimonioTotal)) ? Number(capital.patrimonioTotal) : (capLivre + capNeg + capCofre);
+  const tiro = !isNaN(Number(capital.tiroDinamico)) ? Number(capital.tiroDinamico) : 50;
+  const pnl24h = !isNaN(Number(capital.pnl24h)) ? Number(capital.pnl24h) : 0;
+  const winRate24h = !isNaN(Number(capital.winRate24h)) ? Number(capital.winRate24h) : 0;
+  const totalTrades24h = !isNaN(Number(capital.totalTrades24h)) ? Number(capital.totalTrades24h) : 0;
+
+  const totalCaixaAtivo = (capLivre + capNeg) > 0 ? (capLivre + capNeg) : capInicial;
+  const percNegociacao = Math.min(100, Math.max(0, (capNeg / totalCaixaAtivo) * 100));
+  const percLivre = Math.min(100, Math.max(0, (capLivre / capInicial) * 100));
+  const percCofre = Math.min(100, Math.max(0, (capCofre / capInicial) * 100));
+
+  const isVaultPopulated = capCofre > 0;
   const isGatilho40Active = capital.gatilho40Ativado;
 
   return (
@@ -28,7 +43,7 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
             </div>
           </div>
           <span className="font-mono font-bold text-emerald-300 bg-emerald-950/80 px-2.5 py-1 rounded-lg border border-emerald-500/50 shrink-0">
-            Tiro: ${capital.tiroDinamico.toFixed(2)}
+            Tiro: ${tiro.toFixed(2)}
           </span>
         </div>
       )}
@@ -48,7 +63,7 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
             </span>
           </div>
           <div className="text-2xl font-black text-white font-mono tracking-tight">
-            ${capital.capitalInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            ${capInicial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
           <p className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
             <span>Banca base de referência</span>
@@ -71,18 +86,18 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
             </span>
           </div>
           <div className="text-2xl font-black text-blue-400 font-mono tracking-tight flex items-baseline gap-2">
-            ${capital.capitalEmNegociacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            ${capNeg.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
           <p className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
             <span>Margem alocada em posições</span>
             <span className="text-blue-300 font-semibold">
-              {((capital.capitalEmNegociacao / (capital.capitalLivre + capital.capitalEmNegociacao)) * 100).toFixed(1)}% do caixa
+              {percNegociacao.toFixed(1)}% do caixa
             </span>
           </p>
           <div className="w-full bg-slate-800/80 h-1.5 rounded-full mt-3 overflow-hidden">
             <div
               className="bg-blue-500 h-full rounded-full transition-all duration-500 shadow-sm shadow-blue-500"
-              style={{ width: `${Math.min(100, (capital.capitalEmNegociacao / (capital.capitalLivre + capital.capitalEmNegociacao)) * 100)}%` }}
+              style={{ width: `${percNegociacao}%` }}
             ></div>
           </div>
         </div>
@@ -99,18 +114,18 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
             </span>
           </div>
           <div className="text-2xl font-black text-emerald-400 font-mono tracking-tight">
-            ${capital.capitalLivre.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            ${capLivre.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
           </div>
           <p className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
             <span>Disponível para novas ordens</span>
             <span className="text-emerald-300 font-semibold font-mono">
-              Tiro: ${capital.tiroDinamico.toFixed(2)} (5%)
+              Tiro: ${tiro.toFixed(2)} (5%)
             </span>
           </p>
           <div className="w-full bg-slate-800/80 h-1.5 rounded-full mt-3 overflow-hidden">
             <div
               className="bg-emerald-500 h-full rounded-full transition-all duration-500 shadow-sm shadow-emerald-500"
-              style={{ width: `${Math.min(100, (capital.capitalLivre / capital.capitalInicial) * 100)}%` }}
+              style={{ width: `${percLivre}%` }}
             ></div>
           </div>
         </div>
@@ -131,7 +146,7 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
           </div>
 
           <div className="text-2xl font-black text-amber-300 font-mono tracking-tight flex items-baseline justify-between">
-            <span>${capital.capitalCofre.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            <span>${capCofre.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
             <button
               onClick={onOpenSweepModal}
               className="text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shadow-md shadow-amber-500/20"
@@ -150,7 +165,7 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
           <div className="w-full bg-slate-800/80 h-1.5 rounded-full mt-3 overflow-hidden">
             <div
               className="bg-gradient-to-r from-amber-500 to-yellow-300 h-full rounded-full transition-all duration-500 shadow-sm shadow-amber-400"
-              style={{ width: `${Math.min(100, (capital.capitalCofre / capital.capitalInicial) * 100)}%` }}
+              style={{ width: `${percCofre}%` }}
             ></div>
           </div>
         </div>
@@ -168,9 +183,9 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
               Patrimônio Total Acumulado (Livre + Margem + Cofre)
             </div>
             <div className="text-2xl font-black text-white font-mono tracking-tight flex items-baseline gap-3">
-              ${capital.patrimonioTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              <span className={`text-sm font-bold font-sans ${capital.pnl24h >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {capital.pnl24h >= 0 ? '+' : ''}${capital.pnl24h.toFixed(2)} (24h)
+              ${patTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              <span className={`text-sm font-bold font-sans ${pnl24h >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {pnl24h >= 0 ? '+' : ''}${pnl24h.toFixed(2)} (24h)
               </span>
             </div>
           </div>
@@ -179,11 +194,11 @@ export const CapitalCards: React.FC<CapitalCardsProps> = ({ capital, onOpenSweep
         <div className="flex items-center gap-6 border-t md:border-t-0 md:border-l border-white/10 pt-3 md:pt-0 md:pl-6 text-xs">
           <div>
             <div className="text-slate-400 text-[11px]">Win Rate 24h</div>
-            <div className="text-sm font-bold text-emerald-400 font-mono">{capital.winRate24h}%</div>
+            <div className="text-sm font-bold text-emerald-400 font-mono">{winRate24h}%</div>
           </div>
           <div>
             <div className="text-slate-400 text-[11px]">Operações 24h</div>
-            <div className="text-sm font-bold text-white font-mono">{capital.totalTrades24h} trades</div>
+            <div className="text-sm font-bold text-white font-mono">{totalTrades24h} trades</div>
           </div>
           <div>
             <div className="text-slate-400 text-[11px]">Regra de Ouro</div>

@@ -73,11 +73,16 @@ export default function App() {
   useEffect(() => {
     const applyAllocation = (allocatedCap: number) => {
       if (!isNaN(allocatedCap) && allocatedCap > 0) {
-        setCapital(prev => ({
-          ...prev,
-          saldoLivre: allocatedCap,
-          patrimonioTotal: allocatedCap + prev.saldoEmPosicoes + prev.lucroNoCofre
-        }));
+        setCapital(prev => {
+          const neg = !isNaN(Number(prev.capitalEmNegociacao)) ? Number(prev.capitalEmNegociacao) : 0;
+          const cofre = !isNaN(Number(prev.capitalCofre)) ? Number(prev.capitalCofre) : 0;
+          return {
+            ...prev,
+            capitalInicial: allocatedCap,
+            capitalLivre: allocatedCap,
+            patrimonioTotal: parseFloat((allocatedCap + neg + cofre).toFixed(2))
+          };
+        });
       }
     };
 
@@ -98,9 +103,25 @@ export default function App() {
     setIsRefreshing(true);
     try {
       const res = await fetch('/api/stats');
+      let statsCapital: any = null;
       if (res.ok) {
         const data = await res.json();
-        if (data.capital) setCapital(data.capital);
+        if (data.capital) {
+          statsCapital = data.capital;
+          const capInicial = Number(data.capital.capitalInicial) || 1000;
+          const capLivre = !isNaN(Number(data.capital.capitalLivre)) ? Number(data.capital.capitalLivre) : capInicial;
+          const capCofre = !isNaN(Number(data.capital.capitalCofre)) ? Number(data.capital.capitalCofre) : 0;
+          const capNeg = !isNaN(Number(data.capital.capitalEmNegociacao)) ? Number(data.capital.capitalEmNegociacao) : 0;
+          const patTotal = !isNaN(Number(data.capital.patrimonioTotal)) ? Number(data.capital.patrimonioTotal) : (capLivre + capNeg + capCofre);
+          setCapital({
+            ...data.capital,
+            capitalInicial: capInicial,
+            capitalLivre: capLivre,
+            capitalCofre: capCofre,
+            capitalEmNegociacao: capNeg,
+            patrimonioTotal: parseFloat(patTotal.toFixed(2))
+          });
+        }
         if (data.botStatus) setBotStatus(data.botStatus);
         if (data.audit24h) setAudit24h(data.audit24h);
       }
@@ -108,7 +129,22 @@ export default function App() {
       const resPositions = await fetch('/api/positions');
       if (resPositions.ok) {
         const posData = await resPositions.json();
-        setPositions(posData);
+        const arr = Array.isArray(posData) ? posData : [];
+        setPositions(arr);
+
+        // Auto-correção para garantir que o Capital em Negociação nunca seja zero quando existirem posições abertas
+        const sumRisco = arr.reduce((acc: number, p: any) => acc + (Number(p.capitalEmRisco) || 50), 0);
+        if (arr.length > 0 && sumRisco > 0) {
+          setCapital(prev => {
+            const livre = !isNaN(Number(prev.capitalLivre)) ? Number(prev.capitalLivre) : 1000;
+            const cofre = !isNaN(Number(prev.capitalCofre)) ? Number(prev.capitalCofre) : 0;
+            return {
+              ...prev,
+              capitalEmNegociacao: parseFloat(sumRisco.toFixed(2)),
+              patrimonioTotal: parseFloat((livre + sumRisco + cofre).toFixed(2))
+            };
+          });
+        }
       }
 
       const resTrades = await fetch(`/api/trades?timeframe=${selectedTimeframe}`);
@@ -200,11 +236,15 @@ export default function App() {
       // Local fallback simulation
       if (action === 'take_profit') {
         const profit = 7.50;
-        setCapital(prev => ({
-          ...prev,
-          capitalLivre: parseFloat((prev.capitalLivre + profit).toFixed(2)),
-          patrimonioTotal: parseFloat((prev.patrimonioTotal + profit).toFixed(2))
-        }));
+        setCapital(prev => {
+          const livre = !isNaN(Number(prev.capitalLivre)) ? Number(prev.capitalLivre) : 1000;
+          const total = !isNaN(Number(prev.patrimonioTotal)) ? Number(prev.patrimonioTotal) : livre;
+          return {
+            ...prev,
+            capitalLivre: parseFloat((livre + profit).toFixed(2)),
+            patrimonioTotal: parseFloat((total + profit).toFixed(2))
+          };
+        });
       }
     }
   };

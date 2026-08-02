@@ -1,10 +1,14 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { INITIAL_CAPITAL, INITIAL_BOT_STATUS, INITIAL_ACTIVE_POSITIONS, INITIAL_TRADE_LOGS, INITIAL_MARKET_SIGNALS } from "./src/data/mockData";
 import { CapitalState, TradeLog, ActivePosition, BotStatus, AuditSummary24h } from "./src/types";
 import { binanceService } from "./src/services/binance";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
@@ -109,18 +113,19 @@ async function startServer() {
   // Helper para atualizar as Posições Abertas e o Balanço Livre em Tempo Real ao Executar Ordens (Testnet ou Python)
   function registerActivePositionFromTrade(symbol: string, side: string, amountUSDT: number, rsi: number = 44.5) {
     const moedaName = `${symbol.replace('USDT', '')}/USDT`;
+    const safeAmount = !isNaN(Number(amountUSDT)) && Number(amountUSDT) > 0 ? Number(amountUSDT) : 50;
     if (side === "BUY") {
       const precoBase = symbol.includes("BTC") ? 62332.00 : (symbol.includes("ETH") ? 3380.00 : 150.00);
       const existingIdx = activePositions.findIndex(p => p.moeda === moedaName);
       
       if (existingIdx >= 0) {
-        activePositions[existingIdx].contratos += amountUSDT;
-        activePositions[existingIdx].capitalEmRisco += amountUSDT;
+        activePositions[existingIdx].contratos += safeAmount;
+        activePositions[existingIdx].capitalEmRisco = (Number(activePositions[existingIdx].capitalEmRisco) || 0) + safeAmount;
         activePositions[existingIdx].numOrdens += 1;
       } else {
         activePositions.push({
           moeda: moedaName,
-          contratos: amountUSDT,
+          contratos: safeAmount,
           precoMedio: precoBase,
           precoAtual: precoBase * 1.002,
           numOrdens: 1,
@@ -128,10 +133,10 @@ async function startServer() {
           trailingAtivo: true,
           precoMaximo: precoBase * 1.005,
           atrEntrada: 0.015,
-          capitalEmRisco: amountUSDT,
+          capitalEmRisco: safeAmount,
           rsiEntrada: rsi,
           varEntrada: 0.0035,
-          pnlNaoRealizado: parseFloat((amountUSDT * 0.003).toFixed(2)),
+          pnlNaoRealizado: parseFloat((safeAmount * 0.003).toFixed(2)),
           pnlPercent: 0.30,
           categoria: (symbol.includes('BTC') || symbol.includes('ETH')) ? 'MAJOR' : 'ALT',
           distanciaTrailing: 0.6
@@ -139,20 +144,24 @@ async function startServer() {
       }
 
       // Atualizar caixas do painel
-      capitalState.capitalLivre = Math.max(0, parseFloat((capitalState.capitalLivre - amountUSDT).toFixed(2)));
-      const totalMargin = activePositions.reduce((acc, p) => acc + p.capitalEmRisco, 0);
+      const currentLivre = !isNaN(Number(capitalState.capitalLivre)) ? Number(capitalState.capitalLivre) : 1000;
+      const currentCofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
+      capitalState.capitalLivre = Math.max(0, parseFloat((currentLivre - safeAmount).toFixed(2)));
+      const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
       capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
-      capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + capitalState.capitalCofre).toFixed(2));
+      capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + currentCofre).toFixed(2));
     } else if (side === "SELL") {
       const existingIdx = activePositions.findIndex(p => p.moeda === moedaName);
       if (existingIdx >= 0) {
         const pos = activePositions[existingIdx];
-        const lucro = parseFloat((amountUSDT * 0.024).toFixed(2));
-        capitalState.capitalLivre = parseFloat((capitalState.capitalLivre + pos.capitalEmRisco + lucro).toFixed(2));
+        const lucro = parseFloat((safeAmount * 0.024).toFixed(2));
+        const currentLivre = !isNaN(Number(capitalState.capitalLivre)) ? Number(capitalState.capitalLivre) : 1000;
+        const currentCofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
+        capitalState.capitalLivre = parseFloat((currentLivre + (Number(pos.capitalEmRisco) || 50) + lucro).toFixed(2));
         activePositions.splice(existingIdx, 1);
-        const totalMargin = activePositions.reduce((acc, p) => acc + p.capitalEmRisco, 0);
+        const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
         capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
-        capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + capitalState.capitalCofre).toFixed(2));
+        capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + currentCofre).toFixed(2));
       }
     }
   }
@@ -169,13 +178,16 @@ async function startServer() {
 
   app.get("/api/stats", (req, res) => {
     // Recalculate margins and total
-    const totalMargin = activePositions.reduce((acc, p) => acc + p.capitalEmRisco, 0);
+    const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
+    const livre = !isNaN(Number(capitalState.capitalLivre)) ? Number(capitalState.capitalLivre) : 1000;
+    const cofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
     capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
-    capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + capitalState.capitalCofre).toFixed(2));
+    capitalState.patrimonioTotal = parseFloat((livre + capitalState.capitalEmNegociacao + cofre).toFixed(2));
 
     const audit = calculate24hAudit();
     capitalState.pnl24h = audit.lucroLiquido24h;
-    capitalState.pnl24hPercent = parseFloat(((audit.lucroLiquido24h / capitalState.capitalInicial) * 100).toFixed(2));
+    const inicial = !isNaN(Number(capitalState.capitalInicial)) && capitalState.capitalInicial > 0 ? capitalState.capitalInicial : 1000;
+    capitalState.pnl24hPercent = parseFloat(((audit.lucroLiquido24h / inicial) * 100).toFixed(2));
     capitalState.totalTrades24h = audit.totalOperacoes;
     capitalState.winRate24h = audit.winRate;
 
@@ -543,7 +555,7 @@ async function startServer() {
           symbol: cleanSymbol,
           side: "SELL",
           type: "MARKET",
-          quantity: "0.001"
+          quantity: 0.001
         });
         if (resOrder.orderId) orderId = resOrder.orderId;
       } catch {
@@ -663,7 +675,15 @@ async function startServer() {
   });
 
   // Vite middleware for development vs static serve for production
-  const distPath = path.join(process.cwd(), 'dist');
+  const candidateRoot = path.join(process.cwd(), 'dist');
+  const candidateParent = path.join(__dirname, '..', 'dist');
+  const candidateHere = __dirname;
+  const distPath = fs.existsSync(path.join(candidateRoot, 'index.html'))
+    ? candidateRoot
+    : fs.existsSync(path.join(candidateParent, 'index.html'))
+      ? candidateParent
+      : candidateHere;
+
   const hasBuiltDist = fs.existsSync(path.join(distPath, 'index.html'));
   const isProduction = process.env.NODE_ENV === "production" || hasBuiltDist;
 
@@ -675,7 +695,10 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        return next();
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
