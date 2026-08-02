@@ -444,20 +444,20 @@ export const BinanceTestnetPanel: React.FC = () => {
               <div className="flex items-center justify-between py-2 border-b border-white/5">
                 <span className="text-slate-400">Chave API:</span>
                 <span className="font-mono font-medium text-slate-200">
-                  {status ? status.apiKeyMasked : 'Carregando...'}
+                  {loading ? 'Verificando chave API...' : (status?.apiKeyMasked || 'Não configurada')}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-white/5">
                 <span className="text-slate-400">Ambiente:</span>
                 <span className="font-semibold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 text-xs">
-                  {status?.accountType === 'SPOT_TESTNET_HYBRID' ? 'TESTNET (MODO HÍBRIDO SEM BLOQUEIO)' : status?.isTestnet ? 'BINANCE TESTNET (TESTE)' : 'BINANCE REAL (PRODUÇÃO)'}
+                  {loading ? 'BINANCE TESTNET (SPOT API)' : status?.accountType === 'SPOT_TESTNET_HYBRID' ? 'TESTNET (MODO HÍBRIDO SEM BLOQUEIO)' : status?.isTestnet ? 'BINANCE TESTNET (TESTE)' : 'BINANCE REAL (PRODUÇÃO)'}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-white/5">
                 <span className="text-slate-400">Permissão de TROCA:</span>
                 <span className={`font-semibold flex items-center gap-1 ${status?.canTrade ? 'text-emerald-400' : 'text-slate-500'}`}>
                   {status?.canTrade ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                  {status?.canTrade ? 'Ativada (Pode operar)' : 'Não Ativada'}
+                  {loading ? 'Sincronizando permissão...' : status?.canTrade ? 'Ativada (Pode operar)' : 'Não Ativada / Aguardando Chave'}
                 </span>
               </div>
               <div className="flex items-center justify-between py-2">

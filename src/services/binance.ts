@@ -88,7 +88,7 @@ export class BinanceService {
     const result: Record<string, number> = {};
     try {
       const url = `${this.getBaseUrl()}/api/v3/ticker/price`;
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (!response.ok) return result;
       const data: Array<{ symbol: string; price: string }> = await response.json();
       for (const item of data) {
@@ -133,7 +133,8 @@ export class BinanceService {
       const response = await fetch(url, {
         headers: {
           "X-MBX-APIKEY": this.getApiKey()
-        }
+        },
+        signal: AbortSignal.timeout(6000)
       });
 
       if (!response.ok) {
@@ -272,7 +273,8 @@ export class BinanceService {
         method: "POST",
         headers: {
           "X-MBX-APIKEY": this.getApiKey()
-        }
+        },
+        signal: AbortSignal.timeout(6000)
       });
 
       const data = await response.json();
