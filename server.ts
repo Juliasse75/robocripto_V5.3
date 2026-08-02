@@ -7,8 +7,20 @@ import { INITIAL_CAPITAL, INITIAL_BOT_STATUS, INITIAL_ACTIVE_POSITIONS, INITIAL_
 import { CapitalState, TradeLog, ActivePosition, BotStatus, AuditSummary24h } from "./src/types";
 import { binanceService } from "./src/services/binance";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const getServerDir = () => {
+  if (typeof __dirname !== "undefined") {
+    return __dirname;
+  }
+  try {
+    if (typeof import.meta !== "undefined" && import.meta.url) {
+      return path.dirname(fileURLToPath(import.meta.url));
+    }
+  } catch {
+    // ignore
+  }
+  return process.cwd();
+};
+const serverDir = getServerDir();
 
 async function startServer() {
   const app = express();
@@ -676,8 +688,8 @@ async function startServer() {
 
   // Vite middleware for development vs static serve for production
   const candidateRoot = path.join(process.cwd(), 'dist');
-  const candidateParent = path.join(__dirname, '..', 'dist');
-  const candidateHere = __dirname;
+  const candidateParent = path.join(serverDir, '..', 'dist');
+  const candidateHere = serverDir;
   const distPath = fs.existsSync(path.join(candidateRoot, 'index.html'))
     ? candidateRoot
     : fs.existsSync(path.join(candidateParent, 'index.html'))
