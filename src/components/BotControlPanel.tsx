@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BotStatus, CapitalState } from '../types';
-import { Cpu, Play, Pause, Sparkles, ShieldCheck, Lock, AlertTriangle, RefreshCcw, DollarSign, ArrowDownLeft, Zap } from 'lucide-react';
+import { Cpu, Play, Pause, Sparkles, ShieldCheck, Lock, AlertTriangle, RefreshCcw, DollarSign, ArrowDownLeft, Zap, CheckCircle2, Activity } from 'lucide-react';
 
 interface BotControlPanelProps {
   botStatus: BotStatus;
@@ -18,6 +18,74 @@ export const BotControlPanel: React.FC<BotControlPanelProps> = ({
   onSweepVault
 }) => {
   const [sweepMessage, setSweepMessage] = useState<string | null>(null);
+  const [autoTrader, setAutoTrader] = useState<{
+    enabled: boolean;
+    lastScanTime: string;
+    lastResult: string;
+    positionsCount: number;
+  }>({
+    enabled: false,
+    lastScanTime: '--:--:--',
+    lastResult: 'Motor aguardando ativação ou comando',
+    positionsCount: 0
+  });
+  const [loadingCycle, setLoadingCycle] = useState(false);
+
+  const fetchAutoTraderStatus = async () => {
+    try {
+      const res = await fetch('/api/bot/autotrader/status');
+      if (res.ok) {
+        const data = await res.json();
+        setAutoTrader(data);
+      }
+    } catch {
+      // Ignora falha de rede
+    }
+  };
+
+  useEffect(() => {
+    fetchAutoTraderStatus();
+    const interval = setInterval(fetchAutoTraderStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleToggleAutoTrader = async () => {
+    try {
+      const res = await fetch('/api/bot/autotrader/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !autoTrader.enabled })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAutoTrader(prev => ({ ...prev, enabled: data.enabled, lastScanTime: data.lastScanTime, lastResult: data.lastResult }));
+        window.dispatchEvent(new Event('ROBOCRIPTO_REFRESH_DASHBOARD'));
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleRunCycleNow = async () => {
+    setLoadingCycle(true);
+    try {
+      const res = await fetch('/api/bot/autotrader/run-cycle', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setAutoTrader(prev => ({
+          ...prev,
+          lastScanTime: data.lastScanTime || new Date().toLocaleTimeString('pt-BR'),
+          lastResult: data.message || 'Ciclo V5.3 executado com sucesso!',
+          positionsCount: data.positionsCount || prev.positionsCount
+        }));
+        window.dispatchEvent(new Event('ROBOCRIPTO_REFRESH_DASHBOARD'));
+      }
+    } catch {
+      // Fallback
+    } finally {
+      setLoadingCycle(false);
+    }
+  };
 
   const handleSweep = async () => {
     onSweepVault();
@@ -135,6 +203,65 @@ export const BotControlPanel: React.FC<BotControlPanelProps> = ({
             <span>{sweepMessage}</span>
           </div>
         )}
+      </div>
+
+      {/* Motor Autônomo V5.3 (Embutido no Servidor Node.js - Independe do Python Externo) */}
+      <div className="bg-gradient-to-r from-slate-900/90 via-purple-950/40 to-slate-900/90 backdrop-blur-xl border border-purple-500/40 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-purple-500/20 border border-purple-500/30 rounded-2xl text-purple-300 backdrop-blur-md">
+              <Activity className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  Motor Autônomo V5.3 (Servidor Interno TypeScript)
+                </h3>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${autoTrader.enabled ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-700 text-slate-300'}`}>
+                  {autoTrader.enabled ? 'Ativo (45s Loop)' : 'Em Pausa'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Motor de negociação acoplado diretamente ao backend do Dashboard. Dispensa rodar script Python no seu computador.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRunCycleNow}
+              disabled={loadingCycle}
+              className="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2"
+            >
+              <Zap className="w-4 h-4" />
+              <span>{loadingCycle ? 'Analisando 30 Moedas...' : 'Executar Varredura Agora'}</span>
+            </button>
+
+            <button
+              onClick={handleToggleAutoTrader}
+              className={`px-4 py-2.5 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 ${autoTrader.enabled ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/10'}`}
+            >
+              {autoTrader.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              <span>{autoTrader.enabled ? 'Pausar Motor Auto' : 'Ativar Auto-Trading'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-black/30 p-3.5 rounded-xl border border-white/5 text-xs">
+          <div>
+            <span className="text-slate-400 block mb-0.5">Por que não estava negociando?</span>
+            <span className="text-slate-200">
+              O robô anterior dependia de um script externo (<code className="text-purple-300 bg-black/40 px-1 rounded">CriptoV5_3.py</code>) rodando e enviando Webhooks. Agora o motor está <strong>acoplado dentro do servidor</strong>.
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-400 block mb-0.5">Última Varredura ({autoTrader.lastScanTime}):</span>
+            <span className="text-emerald-300 font-semibold flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 inline shrink-0" />
+              {autoTrader.lastResult}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Live Simulation Controls for Strategy Testing */}

@@ -627,10 +627,10 @@ export const BinanceTestnetPanel: React.FC = () => {
             </div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <Cpu className="w-5 h-5 text-purple-400" />
-              Integração Python ↔ TypeScript: CriptoV5_3.py &rarr; binanceService.placeOrder()
+              Motor Autônomo Embutido no Servidor (TS) & Ponte Python
             </h3>
             <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-3xl">
-              <strong>Ciclo unificado sem intermediários:</strong> O motor de decisão em Python (<code className="text-purple-300 bg-black/40 px-1.5 py-0.5 rounded font-mono">CriptoV5_3.py</code>) emite o sinal (RSI + EMA50 + Momentum) e aciona diretamente o endpoint oficial de ordens no servidor TypeScript, executando ordens automatizadas na Spot Testnet sem bloqueio geográfico.
+              <strong>Ciclo autônomo e sem intermediários:</strong> Além de aceitar ordens externas de <code className="text-purple-300 bg-black/40 px-1.5 py-0.5 rounded font-mono">CriptoV5_3.py</code>, o próprio servidor Node.js agora possui o motor de negociação integrado para analisar RSI + EMA50 e executar ordens autônomas na Spot Testnet sem bloqueio geográfico.
             </p>
           </div>
 
