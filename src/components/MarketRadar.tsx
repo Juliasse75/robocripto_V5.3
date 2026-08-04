@@ -9,7 +9,8 @@ interface MarketRadarProps {
 export const MarketRadar: React.FC<MarketRadarProps> = ({ signals }) => {
   const [filter, setFilter] = useState<'ALL' | 'ELEGIVEL' | 'POSICAO_ABERTA'>('ALL');
 
-  const filteredSignals = signals.filter(s => {
+  const safeSignals = Array.isArray(signals) ? signals : [];
+  const filteredSignals = safeSignals.filter(s => {
     if (filter === 'ELEGIVEL') return s.status === 'ELEGIVEL';
     if (filter === 'POSICAO_ABERTA') return s.status === 'POSICAO_ABERTA';
     return true;
@@ -36,7 +37,7 @@ export const MarketRadar: React.FC<MarketRadarProps> = ({ signals }) => {
               filter === 'ALL' ? 'bg-white/10 text-white border border-white/15' : 'text-slate-400 hover:text-white'
             }`}
           >
-            Todas ({signals.length})
+            Todas ({safeSignals.length})
           </button>
           <button
             onClick={() => setFilter('ELEGIVEL')}

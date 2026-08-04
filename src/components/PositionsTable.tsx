@@ -8,7 +8,8 @@ interface PositionsTableProps {
 }
 
 export const PositionsTable: React.FC<PositionsTableProps> = ({ positions, onClearPositions }) => {
-  if (positions.length === 0) {
+  const safePositions = Array.isArray(positions) ? positions : [];
+  if (safePositions.length === 0) {
     return (
       <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-8 text-center text-slate-400 shadow-2xl">
         <div className="w-12 h-12 rounded-full bg-white/10 border border-white/15 flex items-center justify-center mx-auto mb-3 text-slate-400 backdrop-blur-md">
@@ -27,7 +28,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ positions, onCle
           <Layers className="w-5 h-5 text-emerald-400" />
           <h2 className="text-base font-bold text-white tracking-tight">Posições Ativas em Negociação</h2>
           <span className="bg-emerald-500/20 text-emerald-300 font-mono text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/40 backdrop-blur-md">
-            {positions.length} / 10 ativas
+            {safePositions.length} / 10 ativas
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -60,7 +61,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({ positions, onCle
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {positions.map((pos) => {
+            {safePositions.map((pos) => {
               const isProfit = pos.pnlNaoRealizado >= 0;
 
               return (

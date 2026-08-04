@@ -18,8 +18,9 @@ export const AuditPanel24h: React.FC<AuditPanel24hProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterExitType, setFilterExitType] = useState<string>('ALL');
 
-  const filteredTrades = trades.filter(trade => {
-    const matchesSearch = trade.moeda.toLowerCase().includes(searchTerm.toLowerCase());
+  const safeTrades = Array.isArray(trades) ? trades : [];
+  const filteredTrades = safeTrades.filter(trade => {
+    const matchesSearch = trade.moeda ? trade.moeda.toLowerCase().includes(searchTerm.toLowerCase()) : false;
     const matchesExit = filterExitType === 'ALL' || trade.tipoSaida === filterExitType;
     return matchesSearch && matchesExit;
   });
