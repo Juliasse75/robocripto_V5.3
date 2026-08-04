@@ -302,6 +302,38 @@ export class BinanceService {
       };
     }
   }
+
+  public async getKlines(symbol: string, interval: string = "15m", limit: number = 60) {
+    try {
+      const url = `${this.getBaseUrl()}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (!response.ok) return [];
+      const rawData = await response.json();
+      if (!Array.isArray(rawData)) return [];
+      return rawData.map((item: any) => ({
+        openTime: item[0],
+        open: parseFloat(item[1]),
+        high: parseFloat(item[2]),
+        low: parseFloat(item[3]),
+        close: parseFloat(item[4]),
+        volume: parseFloat(item[5]),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  public async get24hrTicker(symbol?: string) {
+    try {
+      const query = symbol ? `?symbol=${symbol}` : "";
+      const url = `${this.getBaseUrl()}/api/v3/ticker/24hr${query}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
 }
 
 export const binanceService = new BinanceService();

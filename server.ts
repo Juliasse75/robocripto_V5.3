@@ -3,9 +3,10 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
-import { INITIAL_CAPITAL, INITIAL_BOT_STATUS, INITIAL_ACTIVE_POSITIONS, INITIAL_TRADE_LOGS, INITIAL_MARKET_SIGNALS } from "./src/data/mockData";
-import { CapitalState, TradeLog, ActivePosition, BotStatus, AuditSummary24h } from "./src/types";
+import { INITIAL_CAPITAL, INITIAL_BOT_STATUS, INITIAL_ACTIVE_POSITIONS, INITIAL_TRADE_LOGS, INITIAL_MARKET_SIGNALS, MOEDAS_DESEJADAS } from "./src/data/mockData";
+import { CapitalState, TradeLog, ActivePosition, BotStatus, AuditSummary24h, MarketSignal } from "./src/types";
 import { binanceService } from "./src/services/binance";
+import { calculateRSI, calculateEMA, calculateATR } from "./src/services/indicators";
 
 const getServerDir = () => {
   if (typeof __dirname !== "undefined") {
@@ -122,34 +123,130 @@ async function startServer() {
     };
   }
 
+  // Dynamic calculation of market signals using Binance candles & 24hr ticker data
+  async function updateMarketSignals(): Promise<MarketSignal[]> {
+    try {
+      const rawTickers = await binanceService.get24hrTicker();
+      const tickerMap: Record<string, any> = {};
+      if (Array.isArray(rawTickers)) {
+        for (const t of rawTickers) {
+          tickerMap[t.symbol] = t;
+        }
+      }
+
+      const updatedSignals: MarketSignal[] = [];
+
+      for (const itemPair of MOEDAS_DESEJADAS) {
+        const cleanSymbol = itemPair.replace('/', '');
+        const ticker = tickerMap[cleanSymbol];
+
+        let price = ticker ? parseFloat(ticker.lastPrice) : 0;
+        let var3 = ticker ? parseFloat(ticker.priceChangePercent) / 100 : 0;
+        let volume = ticker ? parseFloat(ticker.volume) : 1000;
+
+        let rsi = 50.0;
+        let ema50 = price;
+        let atr = price * 0.015;
+
+        const klines = await binanceService.getKlines(cleanSymbol, "15m", 60);
+        if (klines && klines.length >= 15) {
+          const closes = klines.map(k => k.close);
+          price = closes[closes.length - 1];
+          rsi = calculateRSI(closes, 14);
+          ema50 = calculateEMA(closes, 50);
+          atr = calculateATR(klines, 14);
+        } else if (price === 0) {
+          const basePriceMap: Record<string, number> = {
+            'BTCUSDT': 67250, 'ETHUSDT': 3460, 'SOLUSDT': 184, 'LINKUSDT': 19.1,
+            'AVAXUSDT': 32.6, 'DOGEUSDT': 0.142, 'SHIBUSDT': 0.0000185, 'FETUSDT': 1.34,
+            'RENDERUSDT': 6.12, 'ADAUSDT': 0.412, 'DOTUSDT': 5.82, 'LTCUSDT': 74.2,
+            'NEARUSDT': 5.24, 'FILUSDT': 4.85, 'INJUSDT': 22.8, 'SUIUSDT': 1.88,
+            'XRPUSDT': 0.58, 'BNBUSDT': 580.0
+          };
+          price = basePriceMap[cleanSymbol] || 10.0;
+          ema50 = price * 0.995;
+          rsi = 46.5;
+          atr = price * 0.015;
+        }
+
+        let status: any = "ELEGIVEL";
+        if (rsi < 35) status = "SOBREVENDIDO";
+        else if (rsi > 70) status = "SOBRECOMPRADO";
+        else if (rsi <= 48) status = "ELEGIVEL";
+        else status = "AGUARDANDO_GATILHO";
+
+        const tendencia = price >= ema50 ? "ALTA" : "BAIXA";
+
+        updatedSignals.push({
+          moeda: itemPair,
+          precoAtual: price,
+          atr: parseFloat(atr.toFixed(4)),
+          var3: parseFloat(var3.toFixed(4)),
+          ema50: parseFloat(ema50.toFixed(4)),
+          rsi: parseFloat(rsi.toFixed(1)),
+          volumeRatio: parseFloat((volume > 0 ? 1.0 + (volume % 50) / 100 : 1.1).toFixed(1)),
+          categoria: (cleanSymbol.includes('BTC') || cleanSymbol.includes('ETH')) ? 'MAJOR' : 'ALT',
+          status,
+          tendencia
+        });
+      }
+
+      if (updatedSignals.length > 0) {
+        marketSignals = updatedSignals;
+      }
+    } catch (err) {
+      console.error("[MARKET SIGNALS] Erro ao atualizar sinais:", err);
+    }
+    return marketSignals;
+  }
+
   // Helper para atualizar as Posições Abertas e o Balanço Livre em Tempo Real ao Executar Ordens (Testnet ou Python)
-  function registerActivePositionFromTrade(symbol: string, side: string, amountUSDT: number, rsi: number = 44.5) {
-    const moedaName = `${symbol.replace('USDT', '')}/USDT`;
+  async function registerActivePositionFromTrade(symbol: string, side: string, amountUSDT: number, rsi: number = 44.5, overridePrice?: number) {
+    const cleanSymbol = symbol.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const moedaName = `${cleanSymbol.replace('USDT', '')}/USDT`;
     const safeAmount = !isNaN(Number(amountUSDT)) && Number(amountUSDT) > 0 ? Number(amountUSDT) : 50;
+
+    let livePrice = overridePrice;
+    if (!livePrice || livePrice <= 0) {
+      livePrice = await binanceService.getTickerPrice(cleanSymbol);
+    }
+    if (!livePrice || livePrice <= 0) {
+      const baseMap: Record<string, number> = {
+        BTCUSDT: 67250, ETHUSDT: 3460, SOLUSDT: 184, BNBUSDT: 580,
+        ADAUSDT: 0.42, XRPUSDT: 0.58, AVAXUSDT: 32.5, LINKUSDT: 19.0, DOGEUSDT: 0.14
+      };
+      livePrice = baseMap[cleanSymbol] || 100.0;
+    }
+
     if (side === "BUY") {
-      const precoBase = symbol.includes("BTC") ? 62332.00 : (symbol.includes("ETH") ? 3380.00 : 150.00);
       const existingIdx = activePositions.findIndex(p => p.moeda === moedaName);
-      
+      const contratosCount = safeAmount / livePrice;
+
       if (existingIdx >= 0) {
-        activePositions[existingIdx].contratos += safeAmount;
-        activePositions[existingIdx].capitalEmRisco = (Number(activePositions[existingIdx].capitalEmRisco) || 0) + safeAmount;
-        activePositions[existingIdx].numOrdens += 1;
+        const existing = activePositions[existingIdx];
+        const newTotalContratos = existing.contratos + contratosCount;
+        const newCapital = (Number(existing.capitalEmRisco) || 0) + safeAmount;
+        existing.precoMedio = parseFloat(((existing.precoMedio * existing.contratos + livePrice * contratosCount) / newTotalContratos).toFixed(4));
+        existing.contratos = parseFloat(newTotalContratos.toFixed(6));
+        existing.capitalEmRisco = newCapital;
+        existing.precoAtual = livePrice;
+        existing.numOrdens += 1;
       } else {
         activePositions.push({
           moeda: moedaName,
-          contratos: safeAmount,
-          precoMedio: precoBase,
-          precoAtual: precoBase * 1.002,
+          contratos: parseFloat(contratosCount.toFixed(6)),
+          precoMedio: livePrice,
+          precoAtual: livePrice,
           numOrdens: 1,
           maxOrdens: 5,
           trailingAtivo: true,
-          precoMaximo: precoBase * 1.005,
+          precoMaximo: livePrice * 1.005,
           atrEntrada: 0.015,
           capitalEmRisco: safeAmount,
           rsiEntrada: rsi,
           varEntrada: 0.0035,
-          pnlNaoRealizado: parseFloat((safeAmount * 0.003).toFixed(2)),
-          pnlPercent: 0.30,
+          pnlNaoRealizado: 0.00,
+          pnlPercent: 0.00,
           categoria: (symbol.includes('BTC') || symbol.includes('ETH')) ? 'MAJOR' : 'ALT',
           distanciaTrailing: 0.6
         });
@@ -166,10 +263,10 @@ async function startServer() {
       const existingIdx = activePositions.findIndex(p => p.moeda === moedaName);
       if (existingIdx >= 0) {
         const pos = activePositions[existingIdx];
-        const lucro = parseFloat((safeAmount * 0.024).toFixed(2));
+        const realizedPnL = parseFloat(((livePrice - pos.precoMedio) * pos.contratos).toFixed(2));
         const currentLivre = !isNaN(Number(capitalState.capitalLivre)) ? Number(capitalState.capitalLivre) : 1000;
         const currentCofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
-        capitalState.capitalLivre = parseFloat((currentLivre + (Number(pos.capitalEmRisco) || 50) + lucro).toFixed(2));
+        capitalState.capitalLivre = parseFloat((currentLivre + (Number(pos.capitalEmRisco) || 50) + realizedPnL).toFixed(2));
         activePositions.splice(existingIdx, 1);
         const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
         capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
@@ -233,8 +330,9 @@ async function startServer() {
     res.json(filtered);
   });
 
-  app.get("/api/market-signals", (req, res) => {
-    res.json(marketSignals);
+  app.get("/api/market-signals", async (req, res) => {
+    const signals = await updateMarketSignals();
+    res.json(signals);
   });
 
   // Endpoints da Binance Testnet / Produção
@@ -252,8 +350,10 @@ async function startServer() {
   app.post("/api/binance/order", async (req, res) => {
     const { symbol = "BTCUSDT", side = "BUY", type = "MARKET", quantity, quoteOrderQty = 15, price } = req.body;
     const amount = Number(quoteOrderQty || quantity || 15);
+    const cleanSymbol = symbol.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    
     const result = await binanceService.placeOrder({
-      symbol,
+      symbol: cleanSymbol,
       side,
       type,
       quantity,
@@ -262,21 +362,24 @@ async function startServer() {
     });
 
     if (result.success) {
-      registerActivePositionFromTrade(symbol, side, amount, 45.2);
+      const livePrice = await binanceService.getTickerPrice(cleanSymbol);
+      await registerActivePositionFromTrade(cleanSymbol, side, amount, 45.2, livePrice);
+      const contratosCount = livePrice > 0 ? parseFloat((amount / livePrice).toFixed(6)) : amount;
+
       tradeLogs.unshift({
         id: `#BNB-${result.orderId || Math.floor(Math.random() * 89999 + 10000)}`,
         dataHora: new Date().toLocaleString('pt-BR'),
-        moeda: `${symbol.replace('USDT', '')}/USDT`,
+        moeda: `${cleanSymbol.replace('USDT', '')}/USDT`,
         tipoSaida: side === 'BUY' ? 'COMPRA_V53' : 'TAKE_PROFIT',
-        contratos: amount,
-        precoMedio: 62332,
-        precoSaida: 62510,
+        contratos: contratosCount,
+        precoMedio: livePrice,
+        precoSaida: livePrice,
         numOrdens: 1,
         rsiEntrada: 45.2,
         varEntrada: 0.0035,
-        lucroLiquido: side === 'SELL' ? parseFloat((amount * 0.024).toFixed(2)) : 0,
+        lucroLiquido: 0,
         novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
-        categoria: symbol.includes('BTC') || symbol.includes('ETH') ? 'MAJOR' : 'ALT',
+        categoria: cleanSymbol.includes('BTC') || cleanSymbol.includes('ETH') ? 'MAJOR' : 'ALT',
         duracaoMinutos: 5
       });
     }
@@ -293,10 +396,35 @@ async function startServer() {
     res.json({ success: true, message: "Posições teste foram zeradas e o Capital Livre restaurado para R$ 1.000,00." });
   });
 
-  app.post("/api/bot/toggle", (req, res) => {
+  app.post("/api/bot/toggle", async (req, res) => {
     botStatus.isOnline = !botStatus.isOnline;
     botStatus.statusTexto = botStatus.isOnline ? "MOTOR V5.3 OPERANDO" : "MOTOR EM PAUSA";
-    res.json({ success: true, isOnline: botStatus.isOnline, statusTexto: botStatus.statusTexto });
+    autoTraderEnabled = botStatus.isOnline;
+
+    if (autoTraderEnabled) {
+      if (!autoTraderInterval) {
+        await executeAutoTraderCycle();
+        autoTraderInterval = setInterval(async () => {
+          if (autoTraderEnabled) {
+            await executeAutoTraderCycle();
+          }
+        }, 45000);
+      }
+    } else {
+      if (autoTraderInterval) {
+        clearInterval(autoTraderInterval);
+        autoTraderInterval = null;
+      }
+    }
+
+    res.json({
+      success: true,
+      isOnline: botStatus.isOnline,
+      statusTexto: botStatus.statusTexto,
+      autoTraderEnabled,
+      lastScanTime: lastAutoScanTime,
+      lastResult: lastAutoScanResult
+    });
   });
 
   // Manual Trigger: Friday 22h Profit Sweep to Vault
@@ -435,9 +563,9 @@ async function startServer() {
   // Webhook for Python Bot (CriptoV5_3.py -> Dashboard / Binance Spot Testnet Execution)
   app.post("/api/webhook/trade-log", async (req, res) => {
     const { secret, trade, executeRealOrder, orderParams } = req.body;
-    const validSecret = WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || "logusq_secret_2026";
-    if (secret !== validSecret) {
-      return res.status(403).json({ error: "Webhook secret inválido ou não configurado" });
+    const validSecret = process.env.WEBHOOK_SECRET;
+    if (!validSecret || secret !== validSecret) {
+      return res.status(403).json({ error: "Webhook secret inválido ou não configurado no servidor (WEBHOOK_SECRET)." });
     }
 
     let binanceOrderResult = null;
@@ -506,29 +634,33 @@ async function startServer() {
   app.post("/api/bot/python-bridge/execute", async (req, res) => {
     const { symbol = "BTCUSDT", side = "BUY", quoteOrderQty = 25, rsi = 44.2 } = req.body;
     const amount = Number(quoteOrderQty || 25);
+    const cleanSymbol = symbol.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const result = await binanceService.placeOrder({
-      symbol,
+      symbol: cleanSymbol,
       side,
       type: "MARKET",
       quoteOrderQty: amount
     });
 
     if (result.success) {
-      registerActivePositionFromTrade(symbol, side, amount, rsi);
+      const livePrice = await binanceService.getTickerPrice(cleanSymbol);
+      await registerActivePositionFromTrade(cleanSymbol, side, amount, rsi, livePrice);
+      const contratosCount = livePrice > 0 ? parseFloat((amount / livePrice).toFixed(6)) : amount;
+
       tradeLogs.unshift({
         id: `#BNB-${result.orderId || Math.floor(Math.random() * 90000 + 10000)}`,
         dataHora: new Date().toLocaleString('pt-BR'),
-        moeda: `${symbol.replace('USDT', '')}/USDT`,
+        moeda: `${cleanSymbol.replace('USDT', '')}/USDT`,
         tipoSaida: side === 'BUY' ? 'ENTRADA_PYTHON_V53' : 'TAKE_PROFIT_PYTHON_V53',
-        contratos: amount,
-        precoMedio: 62332,
-        precoSaida: 62510,
+        contratos: contratosCount,
+        precoMedio: livePrice,
+        precoSaida: livePrice,
         numOrdens: 1,
         rsiEntrada: rsi,
         varEntrada: 0.0035,
-        lucroLiquido: side === 'SELL' ? parseFloat((amount * 0.024).toFixed(2)) : 0,
+        lucroLiquido: 0,
         novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
-        categoria: symbol.includes('BTC') || symbol.includes('ETH') ? 'MAJOR' : 'ALT',
+        categoria: cleanSymbol.includes('BTC') || cleanSymbol.includes('ETH') ? 'MAJOR' : 'ALT',
         duracaoMinutos: 8
       });
     }
@@ -544,98 +676,104 @@ async function startServer() {
   let lastAutoScanTime = "--:--:--";
   let lastAutoScanResult = "Motor autônomo aguardando comando";
 
-  const MONITORED_SYMBOLS = [
-    { symbol: "BTCUSDT", name: "BTC/USDT", basePrice: 62332 },
-    { symbol: "ETHUSDT", name: "ETH/USDT", basePrice: 3380 },
-    { symbol: "SOLUSDT", name: "SOL/USDT", basePrice: 152 },
-    { symbol: "BNBUSDT", name: "BNB/USDT", basePrice: 580 },
-    { symbol: "ADAUSDT", name: "ADA/USDT", basePrice: 0.45 },
-    { symbol: "XRPUSDT", name: "XRP/USDT", basePrice: 0.58 },
-    { symbol: "AVAXUSDT", name: "AVAX/USDT", basePrice: 32 },
-    { symbol: "LINKUSDT", name: "LINK/USDT", basePrice: 14 }
-  ];
-
   async function executeAutoTraderCycle(): Promise<string> {
     lastAutoScanTime = new Date().toLocaleTimeString("pt-BR");
-    // 1. Se temos posições abertas e já lucraram, podemos acionar Take Profit
-    if (activePositions.length > 0 && Math.random() > 0.45) {
-      const posToClose = activePositions[0];
-      const cleanSymbol = posToClose.moeda.replace("/", "") || "BTCUSDT";
-      let orderId = Math.floor(Math.random() * 90000 + 10000);
-      try {
-        const resOrder = await binanceService.placeOrder({
-          symbol: cleanSymbol,
-          side: "SELL",
-          type: "MARKET",
-          quantity: 0.001
-        });
-        if (resOrder.orderId) orderId = resOrder.orderId;
-      } catch {
-        // Fallback simulação autônoma de teste
-      }
 
-      registerActivePositionFromTrade(cleanSymbol, "SELL", posToClose.contratos, posToClose.rsiEntrada);
-      const lucro = parseFloat((posToClose.contratos * 0.026).toFixed(2));
-      tradeLogs.unshift({
-        id: `#BNB-${orderId}`,
-        dataHora: new Date().toLocaleString('pt-BR'),
-        moeda: posToClose.moeda,
-        tipoSaida: 'TAKE_PROFIT_AUTO_V53',
-        contratos: posToClose.contratos,
-        precoMedio: posToClose.precoMedio,
-        precoSaida: parseFloat((posToClose.precoMedio * 1.026).toFixed(2)),
-        numOrdens: posToClose.numOrdens,
-        rsiEntrada: posToClose.rsiEntrada,
-        varEntrada: 0.0035,
-        lucroLiquido: lucro,
-        novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
-        categoria: posToClose.moeda.includes('BTC') || posToClose.moeda.includes('ETH') ? 'MAJOR' : 'ALT',
-        duracaoMinutos: 14
-      });
-      lastAutoScanResult = `Take Profit Autônomo V5.3 executado em ${posToClose.moeda} (+$${lucro} USDT de lucro)!`;
-      return lastAutoScanResult;
+    // 1. Atualizar e verificar posições ativas contra preços reais para Take Profit ou Stop Loss
+    for (let i = activePositions.length - 1; i >= 0; i--) {
+      const pos = activePositions[i];
+      const cleanSymbol = pos.moeda.replace("/", "");
+      const livePrice = await binanceService.getTickerPrice(cleanSymbol);
+
+      if (livePrice > 0) {
+        pos.precoAtual = livePrice;
+        pos.pnlNaoRealizado = parseFloat(((livePrice - pos.precoMedio) * pos.contratos).toFixed(2));
+        pos.pnlPercent = parseFloat((((livePrice - pos.precoMedio) / pos.precoMedio) * 100).toFixed(2));
+
+        // Take Profit (+1.5%) ou Stop Loss (-2.5%)
+        if (pos.pnlPercent >= 1.5 || pos.pnlPercent <= -2.5) {
+          const isTP = pos.pnlPercent >= 1.5;
+          const resOrder = await binanceService.placeOrder({
+            symbol: cleanSymbol,
+            side: "SELL",
+            type: "MARKET",
+            quantity: pos.contratos
+          });
+
+          if (resOrder.success) {
+            await registerActivePositionFromTrade(cleanSymbol, "SELL", pos.capitalEmRisco, pos.rsiEntrada, livePrice);
+            const pnlVal = pos.pnlNaoRealizado;
+            tradeLogs.unshift({
+              id: `#BNB-${resOrder.orderId || Math.floor(Math.random() * 89999 + 10000)}`,
+              dataHora: new Date().toLocaleString('pt-BR'),
+              moeda: pos.moeda,
+              tipoSaida: isTP ? 'TAKE_PROFIT_AUTO_V53' : 'STOP_LOSS_AUTO_V53',
+              contratos: pos.contratos,
+              precoMedio: pos.precoMedio,
+              precoSaida: livePrice,
+              numOrdens: pos.numOrdens,
+              rsiEntrada: pos.rsiEntrada,
+              varEntrada: 0.0035,
+              lucroLiquido: pnlVal,
+              novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
+              categoria: pos.categoria,
+              duracaoMinutos: 15
+            });
+            lastAutoScanResult = `Ordem de Venda (${isTP ? 'Take Profit' : 'Stop Loss'}) executada na Binance Testnet para ${pos.moeda} (${pnlVal >= 0 ? '+' : ''}$${pnlVal} USDT)! ID: #${resOrder.orderId}`;
+            return lastAutoScanResult;
+          } else {
+            lastAutoScanResult = `Aviso: Tentativa de venda ${pos.moeda} recusada pela Binance: ${resOrder.error || resOrder.message}`;
+          }
+        }
+      }
     }
 
-    // 2. Abertura autônoma de posição (estratégia RSI < 45 + EMA50 + Momentum)
-    if (activePositions.length < 4) {
-      const target = MONITORED_SYMBOLS[Math.floor(Math.random() * MONITORED_SYMBOLS.length)];
-      const amount = 50; // $50 USDT por tiro (5% do caixa padrão)
-      const rsi = parseFloat((39 + Math.random() * 5).toFixed(1)); // RSI em sobrevenda/gatilho (< 45)
-      let orderId = Math.floor(Math.random() * 90000 + 10000);
-      try {
+    // 2. Abertura autônoma baseada em sinais reais (RSI < 48 e EMA50)
+    if (activePositions.length < 5) {
+      const signals = await updateMarketSignals();
+      const candidates = signals.filter(s => s.rsi < 50 && !activePositions.some(p => p.moeda === s.moeda));
+      candidates.sort((a, b) => a.rsi - b.rsi);
+
+      const target = candidates[0] || signals[Math.floor(Math.random() * signals.length)];
+      if (target) {
+        const cleanSymbol = target.moeda.replace('/', '');
+        const amount = capitalState.tiroDinamico || 50;
+
         const resOrder = await binanceService.placeOrder({
-          symbol: target.symbol,
+          symbol: cleanSymbol,
           side: "BUY",
           type: "MARKET",
           quoteOrderQty: amount
         });
-        if (resOrder.orderId) orderId = resOrder.orderId;
-      } catch {
-        // Fallback autônomo
-      }
 
-      registerActivePositionFromTrade(target.symbol, "BUY", amount, rsi);
-      tradeLogs.unshift({
-        id: `#BNB-${orderId}`,
-        dataHora: new Date().toLocaleString('pt-BR'),
-        moeda: target.name,
-        tipoSaida: 'ENTRADA_AUTO_V53',
-        contratos: amount,
-        precoMedio: target.basePrice,
-        precoSaida: target.basePrice,
-        numOrdens: 1,
-        rsiEntrada: rsi,
-        varEntrada: 0.0031,
-        lucroLiquido: 0,
-        novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
-        categoria: target.name.includes('BTC') || target.name.includes('ETH') ? 'MAJOR' : 'ALT',
-        duracaoMinutos: 0
-      });
-      lastAutoScanResult = `Ordem de Compra ${target.name} executada pelo Motor Autônomo V5.3 ($${amount} USDT | RSI: ${rsi})!`;
-      return lastAutoScanResult;
+        if (resOrder.success) {
+          await registerActivePositionFromTrade(cleanSymbol, "BUY", amount, target.rsi, target.precoAtual);
+          tradeLogs.unshift({
+            id: `#BNB-${resOrder.orderId || Math.floor(Math.random() * 89999 + 10000)}`,
+            dataHora: new Date().toLocaleString('pt-BR'),
+            moeda: target.moeda,
+            tipoSaida: 'ENTRADA_AUTO_V53',
+            contratos: parseFloat((amount / target.precoAtual).toFixed(6)),
+            precoMedio: target.precoAtual,
+            precoSaida: target.precoAtual,
+            numOrdens: 1,
+            rsiEntrada: target.rsi,
+            varEntrada: 0.0031,
+            lucroLiquido: 0,
+            novoCaixa: parseFloat(capitalState.capitalLivre.toFixed(2)),
+            categoria: target.categoria,
+            duracaoMinutos: 0
+          });
+          lastAutoScanResult = `Ordem de Compra ${target.moeda} EXECUTADA na Binance Testnet ($${amount} USDT | RSI: ${target.rsi})! ID: #${resOrder.orderId}`;
+          return lastAutoScanResult;
+        } else {
+          lastAutoScanResult = `Gatilho de compra ${target.moeda} (RSI: ${target.rsi}), porém ordem recusada pela Binance: ${resOrder.error || resOrder.message}`;
+          return lastAutoScanResult;
+        }
+      }
     }
 
-    lastAutoScanResult = "Varredura das 30 moedas concluída - Posições no limite ou aguardando novo gatilho.";
+    lastAutoScanResult = `Varredura de mercado concluída — ${activePositions.length} posições ativas sob monitoramento contínuo.`;
     return lastAutoScanResult;
   }
 
