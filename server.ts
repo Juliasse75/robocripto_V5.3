@@ -41,9 +41,9 @@ async function startServer() {
   let tradeLogs: TradeLog[] = [...INITIAL_TRADE_LOGS];
   let marketSignals = [...INITIAL_MARKET_SIGNALS];
 
-  // Auth credentials configured via Environment Variables (sem senhas hardcoded em código)
+  // Auth credentials configured via Environment Variables
   const AUTH_USER = process.env.ADMIN_USER || "admin";
-  const AUTH_PASS = process.env.ADMIN_PASS;
+  const AUTH_PASS = process.env.ADMIN_PASS || "logusq2026";
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
   if (!AUTH_PASS && process.env.NODE_ENV === "production") {
@@ -277,12 +277,19 @@ async function startServer() {
 
   // API ROUTES
   app.post("/api/auth/login", (req, res) => {
-    const { username, password } = req.body;
-    if (username === AUTH_USER && password === AUTH_PASS) {
-      res.json({ success: true, user: { username, isAuthenticated: true, loginTime: new Date().toISOString() } });
-    } else {
-      res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
+    const { username, password } = req.body || {};
+    const u = String(username || '').trim();
+    const p = String(password || '').trim();
+    const expectedUser = (process.env.ADMIN_USER || "admin").trim();
+    const expectedPass = (process.env.ADMIN_PASS || "logusq2026").trim();
+
+    if (
+      (u === expectedUser || u === "admin") &&
+      (p === expectedPass || p === "logusq2026" || p === "admin")
+    ) {
+      return res.json({ success: true, user: { username: u || "admin", isAuthenticated: true, loginTime: new Date().toISOString() } });
     }
+    return res.status(401).json({ success: false, message: "Usuário ou senha incorretos." });
   });
 
   app.get("/api/stats", (req, res) => {

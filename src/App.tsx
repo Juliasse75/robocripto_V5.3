@@ -8,6 +8,7 @@ import { AnalyticsCharts } from './components/AnalyticsCharts';
 import { BotControlPanel } from './components/BotControlPanel';
 import { SupabaseRailwayGuide } from './components/SupabaseRailwayGuide';
 import { LoginModal } from './components/LoginModal';
+import { LoginPage } from './components/LoginPage';
 import { BinanceTestnetPanel } from './components/BinanceTestnetPanel';
 import {
   CapitalState,
@@ -27,13 +28,18 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('24h');
 
-  // User session state (persisted in localStorage if needed)
+  // User session state (persisted in localStorage)
   const [userSession, setUserSession] = useState<UserSession>(() => {
     const saved = localStorage.getItem('robocripto_user_session');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { }
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.isAuthenticated === 'boolean') {
+          return parsed;
+        }
+      } catch (e) { }
     }
-    return { isAuthenticated: true, username: 'admin', loginTime: new Date().toISOString() };
+    return { isAuthenticated: false, username: '' };
   });
 
   // Core Data States
@@ -191,6 +197,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('robocripto_user_session');
     setUserSession({ isAuthenticated: false, username: '' });
   };
 
@@ -266,6 +273,10 @@ export default function App() {
       }
     }
   };
+
+  if (!userSession.isAuthenticated) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-slate-950 relative overflow-x-hidden">
