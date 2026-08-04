@@ -678,10 +678,21 @@ async function startServer() {
   // ============================================================================
   // MOTOR AUTÔNOMO V5.3 (EMBUTIDO NO SERVIDOR - NÃO PRECISA DO PYTHON EXTERNO)
   // ============================================================================
-  let autoTraderEnabled = false;
+  let autoTraderEnabled = true;
   let autoTraderInterval: NodeJS.Timeout | null = null;
   let lastAutoScanTime = "--:--:--";
-  let lastAutoScanResult = "Motor autônomo aguardando comando";
+  let lastAutoScanResult = "Motor autônomo iniciado e ativo";
+
+  // Iniciar loop autônomo automaticamente no arranque do servidor
+  autoTraderInterval = setInterval(async () => {
+    if (autoTraderEnabled) {
+      await executeAutoTraderCycle();
+    }
+  }, 30000);
+  // Executar primeiro ciclo em background imediatamente
+  setTimeout(() => {
+    executeAutoTraderCycle();
+  }, 2000);
 
   async function executeAutoTraderCycle(): Promise<string> {
     lastAutoScanTime = new Date().toLocaleTimeString("pt-BR");
