@@ -318,7 +318,18 @@ async function startServer() {
     });
   });
 
-  app.get("/api/positions", (req, res) => {
+  app.get("/api/positions", async (req, res) => {
+    try {
+      for (const pos of activePositions) {
+        const cleanSymbol = pos.moeda.replace("/", "");
+        const livePrice = await binanceService.getTickerPrice(cleanSymbol);
+        if (livePrice > 0) {
+          pos.precoAtual = livePrice;
+          pos.pnlNaoRealizado = parseFloat(((livePrice - pos.precoMedio) * pos.contratos).toFixed(2));
+          pos.pnlPercent = parseFloat((((livePrice - pos.precoMedio) / pos.precoMedio) * 100).toFixed(2));
+        }
+      }
+    } catch (e) { }
     res.json(activePositions);
   });
 
@@ -708,9 +719,17 @@ async function startServer() {
         pos.pnlNaoRealizado = parseFloat(((livePrice - pos.precoMedio) * pos.contratos).toFixed(2));
         pos.pnlPercent = parseFloat((((livePrice - pos.precoMedio) / pos.precoMedio) * 100).toFixed(2));
 
-        // Take Profit (+1.5%) ou Stop Loss (-2.5%)
-        if (pos.pnlPercent >= 1.5 || pos.pnlPercent <= -2.5) {
-          const isTP = pos.pnlPercent >= 1.5;
+        // Update trailing max price
+        if (livePrice > (pos.precoMaximo || pos.precoMedio)) {
+          pos.precoMaximo = livePrice;
+        }
+
+        // Check Take Profit (+1.0%), Trailing Stop, or Stop Loss (-2.0%)
+        const isTP = pos.pnlPercent >= 1.0;
+        const isSL = pos.pnlPercent <= -2.0;
+        const isTrailing = pos.trailingAtivo && pos.precoMaximo && pos.precoMaximo > pos.precoMedio * 1.008 && livePrice <= pos.precoMaximo * 0.995;
+
+        if (isTP || isSL || isTrailing) {
           const resOrder = await binanceService.placeOrder({
             symbol: cleanSymbol,
             side: "SELL",
@@ -721,11 +740,12 @@ async function startServer() {
           if (resOrder.success) {
             await registerActivePositionFromTrade(cleanSymbol, "SELL", pos.capitalEmRisco, pos.rsiEntrada, livePrice);
             const pnlVal = pos.pnlNaoRealizado;
+            const exitReason = isTrailing ? 'TRAILING_STOP_AUTO_V53' : (isTP ? 'TAKE_PROFIT_AUTO_V53' : 'STOP_LOSS_AUTO_V53');
             tradeLogs.unshift({
               id: `#BNB-${resOrder.orderId || Math.floor(Math.random() * 89999 + 10000)}`,
               dataHora: new Date().toLocaleString('pt-BR'),
               moeda: pos.moeda,
-              tipoSaida: isTP ? 'TAKE_PROFIT_AUTO_V53' : 'STOP_LOSS_AUTO_V53',
+              tipoSaida: exitReason,
               contratos: pos.contratos,
               precoMedio: pos.precoMedio,
               precoSaida: livePrice,
@@ -737,7 +757,7 @@ async function startServer() {
               categoria: pos.categoria,
               duracaoMinutos: 15
             });
-            lastAutoScanResult = `Ordem de Venda (${isTP ? 'Take Profit' : 'Stop Loss'}) executada na Binance Testnet para ${pos.moeda} (${pnlVal >= 0 ? '+' : ''}$${pnlVal} USDT)! ID: #${resOrder.orderId}`;
+            lastAutoScanResult = `Ordem de Venda (${exitReason}) executada na Binance Testnet para ${pos.moeda} (${pnlVal >= 0 ? '+' : ''}$${pnlVal} USDT)! ID: #${resOrder.orderId}`;
             return lastAutoScanResult;
           } else {
             lastAutoScanResult = `Aviso: Tentativa de venda ${pos.moeda} recusada pela Binance: ${resOrder.error || resOrder.message}`;
@@ -746,13 +766,15 @@ async function startServer() {
       }
     }
 
-    // 2. Abertura autônoma baseada em sinais reais (RSI < 48 e EMA50)
-    if (activePositions.length < 5) {
+    // 2. Abertura autônoma baseada em sinais reais (Permite até 10 posições ativas simultâneas)
+    const maxPositions = botStatus.maxPosicoesSimultaneas || 10;
+    if (activePositions.length < maxPositions) {
       const signals = await updateMarketSignals();
-      const candidates = signals.filter(s => s.rsi < 50 && !activePositions.some(p => p.moeda === s.moeda));
+      const unheldSignals = signals.filter(s => !activePositions.some(p => p.moeda === s.moeda));
+      const candidates = unheldSignals.filter(s => s.rsi <= 52);
       candidates.sort((a, b) => a.rsi - b.rsi);
 
-      const target = candidates[0] || signals[Math.floor(Math.random() * signals.length)];
+      const target = candidates[0] || unheldSignals[0];
       if (target) {
         const cleanSymbol = target.moeda.replace('/', '');
         const amount = capitalState.tiroDinamico || 50;
