@@ -37,13 +37,73 @@ export interface SplitterConfig {
   nBlocks: number;
   /** Número de blocos k selecionados para teste em cada combinação (ex: 2) */
   kTestBlocks: number;
-  /** Duração máxima de uma operação em milissegundos (ex: 4h = 4 * 60 * 60 * 1000 ms) */
+  /** Duração máxima de uma operação em milissegundos para Purging (ex: 4h = 4 * 60 * 60 * 1000 ms) */
   maxTradeDurationMs?: number;
-  /** Opcional: janela de eliminação (purge) em número de candles */
+  /** Percentual de embargo (0.01 a 0.05 = 1% a 5%) ou janela em ms a ser descartada imediatamente APÓS o término de cada bloco de teste */
+  embargoPercentage?: number;
+  /** Duração exata da janela de embargo em milissegundos (opcional, substitui embargoPercentage) */
+  embargoDurationMs?: number;
+  /** Opcional: janela de eliminação em número de candles */
   purgeWindowCandles?: number;
 }
 
 export type TestBlockTimeInput = number | { startTime: number; endTime?: number };
+
+/**
+ * Aplica a regra de Embargo (Embargoing) aos dados de treino.
+ * Descarta velas/amostras que iniciem dentro de uma janela imediatamente APÓS o término de qualquer bloco de teste.
+ * 
+ * Isso elimina contaminações causadas por memória de mercado, autocorrelação residual e inércia temporal.
+ *
+ * @param trainData Array de amostras de treino
+ * @param testBlocksEndTimes Array de timestamps onde os blocos de teste terminaram
+ * @param embargoDurationMs Duração da janela de embargo em milissegundos
+ * @param chunkSize Quantidade de itens por ciclo do Event Loop (default: 5000)
+ * @returns Array de treino filtrado sem os períodos embargados
+ */
+export async function applyEmbargo<T extends KlineCandle>(
+  trainData: T[],
+  testBlocksEndTimes: number[],
+  embargoDurationMs: number,
+  chunkSize: number = 5000
+): Promise<T[]> {
+  if (!trainData || trainData.length === 0) return [];
+  if (!testBlocksEndTimes || testBlocksEndTimes.length === 0 || embargoDurationMs <= 0) {
+    return [...trainData];
+  }
+
+  const cleanTrainData: T[] = [];
+  const total = trainData.length;
+
+  for (let i = 0; i < total; i++) {
+    const sample = trainData[i];
+    const sampleTime = sample.openTime || sample.closeTime || 0;
+
+    let isEmbargoed = false;
+
+    for (let j = 0; j < testBlocksEndTimes.length; j++) {
+      const testEnd = testBlocksEndTimes[j];
+      const embargoEnd = testEnd + embargoDurationMs;
+
+      // Se a amostra de treino inicia na janela logo após o fim do teste, ela é descartada
+      if (sampleTime >= testEnd && sampleTime <= embargoEnd) {
+        isEmbargoed = true;
+        break;
+      }
+    }
+
+    if (!isEmbargoed) {
+      cleanTrainData.push(sample);
+    }
+
+    // Liberar o Event Loop do Node.js periodicamente
+    if (i > 0 && i % chunkSize === 0) {
+      await new Promise<void>((resolve) => setImmediate ? setImmediate(resolve) : setTimeout(resolve, 0));
+    }
+  }
+
+  return cleanTrainData;
+}
 
 /**
  * Função assíncrona otimizada para expurgar (purger) amostras do conjunto de treino que
@@ -52,7 +112,7 @@ export type TestBlockTimeInput = number | { startTime: number; endTime?: number 
  * Evita o contágio temporal (data leakage) liberando periodicamente o Event Loop do Node.js.
  *
  * @param trainData Array de amostras ou velas de treino
- * @param testBlocksTime Array com os timestamps de início ou intervalos dos blocos de teste
+ * @param testBlocksTime Array com os timestamps de início e fim dos blocos de teste
  * @param maxTradeDurationMs Duração máxima estimada de uma operação em milissegundos
  * @param chunkSize Quantidade de itens processados por ciclo do Event Loop (default: 5000)
  * @returns Array de treino purgado sem risco de vazamento de dados
@@ -173,35 +233,103 @@ export class CombinatorialTimeSeriesSplitter {
   }
 
   /**
+   * Aplica janela de embargo aos dados de treino imediatamente após os blocos de teste.
+   */
+  public static async applyEmbargo<T extends KlineCandle>(
+    trainData: T[],
+    testBlocksEndTimes: number[],
+    embargoDurationMs: number,
+    chunkSize: number = 5000
+  ): Promise<T[]> {
+    return applyEmbargo(trainData, testBlocksEndTimes, embargoDurationMs, chunkSize);
+  }
+
+  /**
+   * Pipeline Completa de Combinatorial Purged & Embargoed Cross-Validation (CPCV).
+   * Orquestra a Divisão Combinatória C(N, k), o Expurgo (Purging) e o Embargo (Embargoing)
+   * em um único fluxo quantitativo assíncrono e isolado.
+   *
+   * @param klines Array ordenado cronologicamente de velas
+   * @param config Configuração completa de divisão, purging e embargo
+   * @returns Array com os caminhos totalmente isolados de treino e teste
+   */
+  public static async runPipeline<T extends KlineCandle>(
+    klines: T[],
+    config: SplitterConfig
+  ): Promise<CombinatorialSplitPath<T>[]> {
+    // 1. Etapa 1: Divisão Combinatória Base C(N, k)
+    const baseSplits = this.split(klines, config);
+
+    // Calcular a duração do embargo se for baseado em percentual
+    let calculatedEmbargoMs = config.embargoDurationMs || 0;
+    if (!calculatedEmbargoMs && config.embargoPercentage && config.embargoPercentage > 0 && klines.length > 0) {
+      const firstTime = klines[0].openTime || klines[0].closeTime || 0;
+      const lastTime = klines[klines.length - 1].closeTime || klines[klines.length - 1].openTime || 0;
+      const totalTimeSpan = Math.max(0, lastTime - firstTime);
+      
+      // Embargo calculado em relação ao tempo total da série temporal
+      calculatedEmbargoMs = totalTimeSpan * config.embargoPercentage;
+    }
+
+    const processedSplits: CombinatorialSplitPath<T>[] = [];
+
+    // 2. Etapa 2 e 3: Processar cada caminho executando Purging e Embargo
+    for (const splitPath of baseSplits) {
+      let currentTrainData = splitPath.trainData;
+
+      // Extrair informações de tempo dos blocos de teste
+      const testBlocksSummary = splitPath.blocksSummary.filter((b) => b.isTest);
+      const testBlocksIntervals = testBlocksSummary.map((b) => ({
+        startTime: b.startTime,
+        endTime: b.endTime,
+      }));
+      const testBlocksEndTimes = testBlocksSummary.map((b) => b.endTime);
+
+      // Aplicação de PURGING
+      if (config.maxTradeDurationMs && config.maxTradeDurationMs > 0) {
+        currentTrainData = await this.purgeTrainingData(
+          currentTrainData,
+          testBlocksIntervals,
+          config.maxTradeDurationMs
+        );
+      }
+
+      // Aplicação de EMBARGO
+      if (calculatedEmbargoMs > 0) {
+        currentTrainData = await this.applyEmbargo(
+          currentTrainData,
+          testBlocksEndTimes,
+          calculatedEmbargoMs
+        );
+      }
+
+      processedSplits.push({
+        ...splitPath,
+        trainData: currentTrainData,
+      });
+    }
+
+    return processedSplits;
+  }
+
+  /**
+   * Alias legado para splitWithPurgingAndEmbargo
+   */
+  public static async splitWithPurgingAndEmbargo<T extends KlineCandle>(
+    klines: T[],
+    config: SplitterConfig
+  ): Promise<CombinatorialSplitPath<T>[]> {
+    return this.runPipeline(klines, config);
+  }
+
+  /**
    * Divide uma série temporal em N blocos e gera os caminhos C(N, k) com Purging automático.
    */
   public static async splitWithPurging<T extends KlineCandle>(
     klines: T[],
     config: SplitterConfig
   ): Promise<CombinatorialSplitPath<T>[]> {
-    const rawSplits = this.split(klines, config);
-    if (!config.maxTradeDurationMs) return rawSplits;
-
-    const purgedSplits: CombinatorialSplitPath<T>[] = [];
-
-    for (const splitPath of rawSplits) {
-      const testBlocksTime = splitPath.blocksSummary
-        .filter((b) => b.isTest)
-        .map((b) => ({ startTime: b.startTime, endTime: b.endTime }));
-
-      const purgedTrainData = await this.purgeTrainingData(
-        splitPath.trainData,
-        testBlocksTime,
-        config.maxTradeDurationMs
-      );
-
-      purgedSplits.push({
-        ...splitPath,
-        trainData: purgedTrainData,
-      });
-    }
-
-    return purgedSplits;
+    return this.runPipeline(klines, config);
   }
 
   /**
