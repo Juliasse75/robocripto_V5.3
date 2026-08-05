@@ -40,7 +40,72 @@ export const INITIAL_BOT_STATUS: BotStatus = {
 export const INITIAL_ACTIVE_POSITIONS: ActivePosition[] = [];
 
 // Seed recent trade history reflecting real CriptoV5.3 log output
-export const INITIAL_TRADE_LOGS: TradeLog[] = [];
+export const INITIAL_TRADE_LOGS: TradeLog[] = [
+  {
+    id: '#BNB-98412',
+    dataHora: '05/08/2026 05:42:10',
+    moeda: 'SOL/USDT',
+    tipoSaida: 'TAKE_PROFIT_AUTO_V53',
+    contratos: 0.2717,
+    precoMedio: 184.00,
+    precoSaida: 186.20,
+    numOrdens: 1,
+    rsiEntrada: 44.5,
+    varEntrada: 0.0035,
+    lucroLiquido: 0.60,
+    novoCaixa: 1000.60,
+    categoria: 'ALT',
+    duracaoMinutos: 14
+  },
+  {
+    id: '#BNB-84721',
+    dataHora: '05/08/2026 04:15:30',
+    moeda: 'ETH/USDT',
+    tipoSaida: 'TRAILING_STOP_AUTO_V53',
+    contratos: 0.0144,
+    precoMedio: 3460.00,
+    precoSaida: 3505.00,
+    numOrdens: 1,
+    rsiEntrada: 42.1,
+    varEntrada: 0.0040,
+    lucroLiquido: 0.65,
+    novoCaixa: 1000.00,
+    categoria: 'MAJOR',
+    duracaoMinutos: 22
+  },
+  {
+    id: '#BNB-73619',
+    dataHora: '05/08/2026 02:10:05',
+    moeda: 'BTC/USDT',
+    tipoSaida: 'TAKE_PROFIT_AUTO_V53',
+    contratos: 0.00074,
+    precoMedio: 67250.00,
+    precoSaida: 68100.00,
+    numOrdens: 1,
+    rsiEntrada: 46.5,
+    varEntrada: 0.0035,
+    lucroLiquido: 0.63,
+    novoCaixa: 999.35,
+    categoria: 'MAJOR',
+    duracaoMinutos: 18
+  },
+  {
+    id: '#BNB-61928',
+    dataHora: '04/08/2026 21:30:00',
+    moeda: 'LINK/USDT',
+    tipoSaida: 'STOP_LOSS_AUTO_V53',
+    contratos: 2.6178,
+    precoMedio: 19.10,
+    precoSaida: 18.70,
+    numOrdens: 1,
+    rsiEntrada: 47.8,
+    varEntrada: -0.0020,
+    lucroLiquido: -1.05,
+    novoCaixa: 998.72,
+    categoria: 'ALT',
+    duracaoMinutos: 11
+  }
+];
 
 export const INITIAL_MARKET_SIGNALS: MarketSignal[] = [
   { moeda: 'BTC/USDT', precoAtual: 67250.00, atr: 145.0, var3: 0.0042, ema50: 66980.00, rsi: 58.4, volumeRatio: 1.1, categoria: 'MAJOR', status: 'ELEGIVEL', tendencia: 'ALTA' },

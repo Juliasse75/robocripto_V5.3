@@ -50,12 +50,43 @@ async function startServer() {
     console.warn("[AVISO DE AUDITORIA] ADMIN_PASS não configurado no .env em produção.");
   }
 
-  // Helper to recalculate 24h audit metrics
-  function calculate24hAudit(): AuditSummary24h {
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    const trades24h = tradeLogs.filter(t => {
-      const ts = new Date(t.dataHora).getTime();
-      return !isNaN(ts) ? ts >= cutoff : true;
+  // Helper to parse dates formatted as Brazilian "DD/MM/YYYY, HH:mm:ss" or ISO strings
+  function parseTradeDate(dateStr: string): number {
+    if (!dateStr) return 0;
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) return d.getTime();
+
+    const m = String(dateStr).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,\s*|\s+)(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (m) {
+      const [, day, month, year, hours, minutes, seconds] = m;
+      return new Date(
+        parseInt(year, 10),
+        parseInt(month, 10) - 1,
+        parseInt(day, 10),
+        parseInt(hours, 10),
+        parseInt(minutes, 10),
+        parseInt(seconds || '0', 10)
+      ).getTime();
+    }
+    return 0;
+  }
+
+  // Helper to recalculate audit metrics for a given timeframe ('24h', '7d', 'all')
+  function calculateAudit(timeframe: string = '24h'): AuditSummary24h {
+    const now = Date.now();
+    let cutoff = 0;
+    if (timeframe === '24h') {
+      cutoff = now - 24 * 60 * 60 * 1000;
+    } else if (timeframe === '7d') {
+      cutoff = now - 7 * 24 * 60 * 60 * 1000;
+    } else if (timeframe === '30d') {
+      cutoff = now - 30 * 24 * 60 * 60 * 1000;
+    }
+
+    const tradesInPeriod = tradeLogs.filter(t => {
+      if (cutoff === 0) return true;
+      const ts = parseTradeDate(t.dataHora);
+      return ts >= cutoff;
     });
 
     let lucroLiquido24h = 0;
@@ -75,18 +106,23 @@ async function startServer() {
       FECHAMENTO_MANUAL: { count: 0, totalPnL: 0 },
     };
 
-    trades24h.forEach(t => {
-      if (t.tipoSaida === 'SAQUE_SEXTA') return; // Skip vault sweep from win/loss trade counts
-      const pnl = t.lucroLiquido;
+    tradesInPeriod.forEach(t => {
+      if (t.tipoSaida === 'SAQUE_SEXTA' || t.tipoSaida === 'ENTRADA_AUTO_V53' || t.tipoSaida === 'COMPRA_V53') return;
+      const pnl = Number(t.lucroLiquido) || 0;
       lucroLiquido24h += pnl;
 
-      if (!lucroPorTipoSaida[t.tipoSaida]) {
-        lucroPorTipoSaida[t.tipoSaida] = { count: 0, totalPnL: 0 };
-      }
-      lucroPorTipoSaida[t.tipoSaida].count += 1;
-      lucroPorTipoSaida[t.tipoSaida].totalPnL += pnl;
+      const typeKey = t.tipoSaida.includes('TAKE_PROFIT') ? 'TAKE_PROFIT'
+                    : t.tipoSaida.includes('STOP_LOSS') ? 'STOP_LOSS'
+                    : t.tipoSaida.includes('TRAILING') ? 'TAKE_PROFIT'
+                    : t.tipoSaida;
 
-      totalDuracao += t.duracaoMinutos || 20;
+      if (!lucroPorTipoSaida[typeKey]) {
+        lucroPorTipoSaida[typeKey] = { count: 0, totalPnL: 0 };
+      }
+      lucroPorTipoSaida[typeKey].count += 1;
+      lucroPorTipoSaida[typeKey].totalPnL += pnl;
+
+      totalDuracao += t.duracaoMinutos || 15;
 
       if (pnl > 0) {
         vitorias++;
@@ -104,10 +140,10 @@ async function startServer() {
     const lucroMedioVitoria = vitorias > 0 ? totalWinVal / vitorias : 0;
     const perdaMediaDerrota = derrotas > 0 ? totalLossVal / derrotas : 0;
     const fatorLucro = totalLossVal > 0 ? totalWinVal / totalLossVal : (totalWinVal > 0 ? 99 : 0);
-    const taxasEstimadas = totalOperacoes * 0.15; // Taker fees estimate
+    const taxasEstimadas = totalOperacoes * 0.05;
 
     return {
-      lucroLiquido24h,
+      lucroLiquido24h: parseFloat(lucroLiquido24h.toFixed(2)),
       totalOperacoes,
       vitorias,
       derrotas,
@@ -284,7 +320,7 @@ async function startServer() {
     capitalState.capitalLivre = parseFloat(Math.max(0, capInicial + totalRealizedPnL - totalMargin - capCofre).toFixed(2));
     capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + capCofre + totalUnrealizedPnL).toFixed(2));
 
-    const audit = calculate24hAudit();
+    const audit = calculateAudit('24h');
     capitalState.pnl24h = audit.lucroLiquido24h;
     capitalState.pnl24hPercent = parseFloat(((audit.lucroLiquido24h / capInicial) * 100).toFixed(2));
     capitalState.totalTrades24h = audit.totalOperacoes;
@@ -310,7 +346,8 @@ async function startServer() {
 
   app.get("/api/stats", (req, res) => {
     recalculateCapitalState();
-    const audit = calculate24hAudit();
+    const timeframe = (req.query.timeframe as string) || "24h";
+    const audit = calculateAudit(timeframe);
 
     res.json({
       capital: capitalState,
@@ -339,15 +376,18 @@ async function startServer() {
   });
 
   app.get("/api/trades", (req, res) => {
-    const { timeframe } = req.query; // '24h', '7d', '30d', 'all'
+    const timeframe = (req.query.timeframe as string) || "all";
     let filtered = [...tradeLogs];
 
     if (timeframe === '24h') {
       const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-      filtered = tradeLogs.filter(t => new Date(t.dataHora).getTime() >= cutoff);
+      filtered = tradeLogs.filter(t => parseTradeDate(t.dataHora) >= cutoff);
     } else if (timeframe === '7d') {
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      filtered = tradeLogs.filter(t => new Date(t.dataHora).getTime() >= cutoff);
+      filtered = tradeLogs.filter(t => parseTradeDate(t.dataHora) >= cutoff);
+    } else if (timeframe === '30d') {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      filtered = tradeLogs.filter(t => parseTradeDate(t.dataHora) >= cutoff);
     }
 
     res.json(filtered);

@@ -21,7 +21,8 @@ export const AuditPanel24h: React.FC<AuditPanel24hProps> = ({
   const safeTrades = Array.isArray(trades) ? trades : [];
   const filteredTrades = safeTrades.filter(trade => {
     const matchesSearch = trade.moeda ? trade.moeda.toLowerCase().includes(searchTerm.toLowerCase()) : false;
-    const matchesExit = filterExitType === 'ALL' || trade.tipoSaida === filterExitType;
+    const exitStr = trade.tipoSaida || '';
+    const matchesExit = filterExitType === 'ALL' || exitStr.includes(filterExitType);
     return matchesSearch && matchesExit;
   });
 
@@ -233,20 +234,33 @@ export const AuditPanel24h: React.FC<AuditPanel24hProps> = ({
                     <td className="p-3.5 pl-5 text-slate-400 text-[11px]">{t.dataHora}</td>
                     <td className="p-3.5 font-bold text-white">{t.moeda}</td>
                     <td className="p-3.5">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        t.tipoSaida === 'TAKE_PROFIT'
-                          ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
-                          : t.tipoSaida === 'RESGATE_GRID'
-                          ? 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
-                          : t.tipoSaida === 'SAQUE_SEXTA'
-                          ? 'bg-purple-950/80 text-purple-300 border border-purple-500/40'
-                          : 'bg-red-950/80 text-red-300 border border-red-500/40'
-                      }`}>
-                        {t.tipoSaida === 'TAKE_PROFIT' && '🏄 TAKE PROFIT'}
-                        {t.tipoSaida === 'RESGATE_GRID' && '🤝 RESGATE GRID'}
-                        {t.tipoSaida === 'STOP_LOSS' && '🚨 STOP LOSS'}
-                        {t.tipoSaida === 'SAQUE_SEXTA' && '🔒 SAQUE COFRE'}
-                      </span>
+                      {(() => {
+                        const exitStr = t.tipoSaida || '';
+                        const isTP = exitStr.includes('TAKE_PROFIT') || exitStr.includes('TRAILING');
+                        const isSL = exitStr.includes('STOP_LOSS');
+                        const isGrid = exitStr.includes('RESGATE');
+                        const isCofre = exitStr.includes('SAQUE');
+
+                        return (
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            isTP
+                              ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
+                              : isGrid
+                              ? 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
+                              : isCofre
+                              ? 'bg-purple-950/80 text-purple-300 border border-purple-500/40'
+                              : isSL
+                              ? 'bg-red-950/80 text-red-300 border border-red-500/40'
+                              : 'bg-blue-950/80 text-blue-300 border border-blue-500/40'
+                          }`}>
+                            {isTP && (exitStr.includes('TRAILING') ? '🎯 TRAILING STOP' : '🏄 TAKE PROFIT')}
+                            {isGrid && '🤝 RESGATE GRID'}
+                            {isSL && '🚨 STOP LOSS'}
+                            {isCofre && '🔒 SAQUE COFRE'}
+                            {!isTP && !isGrid && !isSL && !isCofre && `🚀 ${exitStr.replace(/_/g, ' ')}`}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-3.5 text-slate-300">{t.numOrdens > 0 ? `${t.numOrdens} orden(s)` : '-'}</td>
                     <td className="p-3.5 text-slate-300">${t.precoMedio < 10 ? t.precoMedio.toFixed(4) : t.precoMedio.toFixed(2)}</td>
