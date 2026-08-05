@@ -37,8 +37,83 @@ export interface SplitterConfig {
   nBlocks: number;
   /** Número de blocos k selecionados para teste em cada combinação (ex: 2) */
   kTestBlocks: number;
-  /** Opcional: janela de eliminação (purge) em candles para evitar vazamento de dados entre treino/teste */
+  /** Duração máxima de uma operação em milissegundos (ex: 4h = 4 * 60 * 60 * 1000 ms) */
+  maxTradeDurationMs?: number;
+  /** Opcional: janela de eliminação (purge) em número de candles */
   purgeWindowCandles?: number;
+}
+
+export type TestBlockTimeInput = number | { startTime: number; endTime?: number };
+
+/**
+ * Função assíncrona otimizada para expurgar (purger) amostras do conjunto de treino que
+ * possam sobrepor o período de vigência dos blocos de teste.
+ * 
+ * Evita o contágio temporal (data leakage) liberando periodicamente o Event Loop do Node.js.
+ *
+ * @param trainData Array de amostras ou velas de treino
+ * @param testBlocksTime Array com os timestamps de início ou intervalos dos blocos de teste
+ * @param maxTradeDurationMs Duração máxima estimada de uma operação em milissegundos
+ * @param chunkSize Quantidade de itens processados por ciclo do Event Loop (default: 5000)
+ * @returns Array de treino purgado sem risco de vazamento de dados
+ */
+export async function purgeTrainingData<T extends KlineCandle>(
+  trainData: T[],
+  testBlocksTime: TestBlockTimeInput[],
+  maxTradeDurationMs: number,
+  chunkSize: number = 5000
+): Promise<T[]> {
+  if (!trainData || trainData.length === 0) return [];
+  if (!testBlocksTime || testBlocksTime.length === 0) return [...trainData];
+
+  // Normalizar intervalos de teste para [{ startTime, endTime }]
+  const testIntervals = testBlocksTime.map((item) => {
+    if (typeof item === 'number') {
+      return { startTime: item, endTime: Infinity };
+    }
+    return {
+      startTime: item.startTime,
+      endTime: item.endTime ?? Infinity,
+    };
+  });
+
+  const purgedTrainData: T[] = [];
+  const total = trainData.length;
+
+  for (let i = 0; i < total; i++) {
+    const sample = trainData[i];
+    const sampleStartTime = sample.openTime || sample.closeTime || 0;
+    const sampleEndTime = sampleStartTime + maxTradeDurationMs;
+
+    // Verificar se a amostra invade a janela de qualquer bloco de teste
+    let hasLeakage = false;
+
+    for (let j = 0; j < testIntervals.length; j++) {
+      const { startTime: testStart, endTime: testEnd } = testIntervals[j];
+
+      // A operação invadiu o teste se:
+      // 1. Iniciou antes do teste mas a duração da operação avança para dentro do teste
+      // 2. Ou iniciou dentro do próprio intervalo de teste
+      const overlapsTestStart = sampleStartTime < testStart && sampleEndTime > testStart;
+      const insideTestInterval = sampleStartTime >= testStart && sampleStartTime < testEnd;
+
+      if (overlapsTestStart || insideTestInterval) {
+        hasLeakage = true;
+        break;
+      }
+    }
+
+    if (!hasLeakage) {
+      purgedTrainData.push(sample);
+    }
+
+    // Liberar o Event Loop a cada N iterações para não travar o servidor Node.js
+    if (i > 0 && i % chunkSize === 0) {
+      await new Promise<void>((resolve) => setImmediate ? setImmediate(resolve) : setTimeout(resolve, 0));
+    }
+  }
+
+  return purgedTrainData;
 }
 
 export class CombinatorialTimeSeriesSplitter {
@@ -86,12 +161,52 @@ export class CombinatorialTimeSeriesSplitter {
   }
 
   /**
+   * Purga amostras de treino para evitar contaminação por sobreposição temporal.
+   */
+  public static async purgeTrainingData<T extends KlineCandle>(
+    trainData: T[],
+    testBlocksTime: TestBlockTimeInput[],
+    maxTradeDurationMs: number,
+    chunkSize: number = 5000
+  ): Promise<T[]> {
+    return purgeTrainingData(trainData, testBlocksTime, maxTradeDurationMs, chunkSize);
+  }
+
+  /**
+   * Divide uma série temporal em N blocos e gera os caminhos C(N, k) com Purging automático.
+   */
+  public static async splitWithPurging<T extends KlineCandle>(
+    klines: T[],
+    config: SplitterConfig
+  ): Promise<CombinatorialSplitPath<T>[]> {
+    const rawSplits = this.split(klines, config);
+    if (!config.maxTradeDurationMs) return rawSplits;
+
+    const purgedSplits: CombinatorialSplitPath<T>[] = [];
+
+    for (const splitPath of rawSplits) {
+      const testBlocksTime = splitPath.blocksSummary
+        .filter((b) => b.isTest)
+        .map((b) => ({ startTime: b.startTime, endTime: b.endTime }));
+
+      const purgedTrainData = await this.purgeTrainingData(
+        splitPath.trainData,
+        testBlocksTime,
+        config.maxTradeDurationMs
+      );
+
+      purgedSplits.push({
+        ...splitPath,
+        trainData: purgedTrainData,
+      });
+    }
+
+    return purgedSplits;
+  }
+
+  /**
    * Divide uma série temporal de velas (klines) em N blocos contínuos e gera os caminhos de Treino/Teste
    * baseados em todas as combinações C(N, k).
-   *
-   * @param klines Array ordenado cronologicamente de velas/k-lines
-   * @param config Configuração contendo nBlocks e kTestBlocks
-   * @returns Array de caminhos de treino e teste fortemente tipados
    */
   public static split<T extends KlineCandle>(
     klines: T[],
@@ -121,7 +236,6 @@ export class CombinatorialTimeSeriesSplitter {
 
     for (let i = 0; i < nBlocks; i++) {
       const startIndex = i * blockSize;
-      // O último bloco absorve os candles remanescentes para garantir 100% de cobertura
       const endIndex = i === nBlocks - 1 ? totalCandles : (i + 1) * blockSize;
       blocks.push(klines.slice(startIndex, endIndex));
     }
@@ -161,7 +275,6 @@ export class CombinatorialTimeSeriesSplitter {
           if (isTest) {
             testData.push(...blockCandles);
           } else {
-            // Se houver purgeWindow, removemos os últimos candles do bloco de treino se o bloco seguinte for teste
             let validTrainBlock = blockCandles;
             if (purgeWindowCandles > 0 && testBlockIndicesSet.has(blockIdx + 1)) {
               const keepCount = Math.max(0, blockCandles.length - purgeWindowCandles);
