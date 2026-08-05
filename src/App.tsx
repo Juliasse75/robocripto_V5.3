@@ -82,11 +82,12 @@ export default function App() {
         setCapital(prev => {
           const neg = !isNaN(Number(prev.capitalEmNegociacao)) ? Number(prev.capitalEmNegociacao) : 0;
           const cofre = !isNaN(Number(prev.capitalCofre)) ? Number(prev.capitalCofre) : 0;
+          const livre = Math.max(0, parseFloat((allocatedCap - neg - cofre).toFixed(2)));
           return {
             ...prev,
             capitalInicial: allocatedCap,
-            capitalLivre: allocatedCap,
-            patrimonioTotal: parseFloat((allocatedCap + neg + cofre).toFixed(2))
+            capitalLivre: livre,
+            patrimonioTotal: parseFloat((livre + neg + cofre).toFixed(2))
           };
         });
       }
@@ -109,24 +110,10 @@ export default function App() {
     setIsRefreshing(true);
     try {
       const res = await fetch('/api/stats');
-      let statsCapital: any = null;
       if (res.ok) {
         const data = await res.json();
         if (data.capital) {
-          statsCapital = data.capital;
-          const capInicial = Number(data.capital.capitalInicial) || 1000;
-          const capLivre = !isNaN(Number(data.capital.capitalLivre)) ? Number(data.capital.capitalLivre) : capInicial;
-          const capCofre = !isNaN(Number(data.capital.capitalCofre)) ? Number(data.capital.capitalCofre) : 0;
-          const capNeg = !isNaN(Number(data.capital.capitalEmNegociacao)) ? Number(data.capital.capitalEmNegociacao) : 0;
-          const patTotal = !isNaN(Number(data.capital.patrimonioTotal)) ? Number(data.capital.patrimonioTotal) : (capLivre + capNeg + capCofre);
-          setCapital({
-            ...data.capital,
-            capitalInicial: capInicial,
-            capitalLivre: capLivre,
-            capitalCofre: capCofre,
-            capitalEmNegociacao: capNeg,
-            patrimonioTotal: parseFloat(patTotal.toFixed(2))
-          });
+          setCapital(data.capital);
         }
         if (data.botStatus) setBotStatus(data.botStatus);
         if (data.audit24h) setAudit24h(data.audit24h);
@@ -138,19 +125,22 @@ export default function App() {
         const arr = Array.isArray(posData) ? posData : [];
         setPositions(arr);
 
-        // Auto-correção para garantir que o Capital em Negociação nunca seja zero quando existirem posições abertas
+        // Recalcular rigorosamente o Capital em Negociação e Livre
         const sumRisco = arr.reduce((acc: number, p: any) => acc + (Number(p.capitalEmRisco) || 50), 0);
-        if (arr.length > 0 && sumRisco > 0) {
-          setCapital(prev => {
-            const livre = !isNaN(Number(prev.capitalLivre)) ? Number(prev.capitalLivre) : 1000;
-            const cofre = !isNaN(Number(prev.capitalCofre)) ? Number(prev.capitalCofre) : 0;
-            return {
-              ...prev,
-              capitalEmNegociacao: parseFloat(sumRisco.toFixed(2)),
-              patrimonioTotal: parseFloat((livre + sumRisco + cofre).toFixed(2))
-            };
-          });
-        }
+        const sumUnrealized = arr.reduce((acc: number, p: any) => acc + (Number(p.pnlNaoRealizado) || 0), 0);
+
+        setCapital(prev => {
+          const inicial = !isNaN(Number(prev.capitalInicial)) && Number(prev.capitalInicial) > 0 ? Number(prev.capitalInicial) : 1000;
+          const cofre = !isNaN(Number(prev.capitalCofre)) ? Number(prev.capitalCofre) : 0;
+          const pnl24h = !isNaN(Number(prev.pnl24h)) ? Number(prev.pnl24h) : 0;
+          const livre = Math.max(0, parseFloat((inicial + pnl24h - sumRisco - cofre).toFixed(2)));
+          return {
+            ...prev,
+            capitalEmNegociacao: parseFloat(sumRisco.toFixed(2)),
+            capitalLivre: livre,
+            patrimonioTotal: parseFloat((livre + sumRisco + cofre + sumUnrealized).toFixed(2))
+          };
+        });
       }
 
       const resTrades = await fetch(`/api/trades?timeframe=${selectedTimeframe}`);

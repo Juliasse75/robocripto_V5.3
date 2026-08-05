@@ -252,27 +252,43 @@ async function startServer() {
         });
       }
 
-      // Atualizar caixas do painel
-      const currentLivre = !isNaN(Number(capitalState.capitalLivre)) ? Number(capitalState.capitalLivre) : 1000;
-      const currentCofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
-      capitalState.capitalLivre = Math.max(0, parseFloat((currentLivre - safeAmount).toFixed(2)));
-      const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
-      capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
-      capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + currentCofre).toFixed(2));
+      // Recalcular estado financeiro unificado
+      recalculateCapitalState();
     } else if (side === "SELL") {
       const existingIdx = activePositions.findIndex(p => p.moeda === moedaName);
       if (existingIdx >= 0) {
-        const pos = activePositions[existingIdx];
-        const realizedPnL = parseFloat(((livePrice - pos.precoMedio) * pos.contratos).toFixed(2));
-        const currentLivre = !isNaN(Number(capitalState.capitalLivre)) ? Number(capitalState.capitalLivre) : 1000;
-        const currentCofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
-        capitalState.capitalLivre = parseFloat((currentLivre + (Number(pos.capitalEmRisco) || 50) + realizedPnL).toFixed(2));
         activePositions.splice(existingIdx, 1);
-        const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
-        capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
-        capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + currentCofre).toFixed(2));
+        recalculateCapitalState();
       }
     }
+  }
+
+  // Recálculo matematicamente rigoroso do Capital State
+  function recalculateCapitalState() {
+    const capInicial = !isNaN(Number(capitalState.capitalInicial)) && Number(capitalState.capitalInicial) > 0 ? Number(capitalState.capitalInicial) : 1000;
+    const capCofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
+
+    // Total de margem alocada em posições ativas
+    const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
+
+    // Lucro/prejuízo total realizado de operações ENCERRADAS (vendas concluídas)
+    const totalRealizedPnL = tradeLogs.reduce((acc, t) => {
+      if (t.tipoSaida === 'SAQUE_SEXTA' || t.tipoSaida === 'ENTRADA_AUTO_V53') return acc;
+      return acc + (Number(t.lucroLiquido) || 0);
+    }, 0);
+
+    // PnL não realizado das posições ativas
+    const totalUnrealizedPnL = activePositions.reduce((acc, p) => acc + (Number(p.pnlNaoRealizado) || 0), 0);
+
+    capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
+    capitalState.capitalLivre = parseFloat(Math.max(0, capInicial + totalRealizedPnL - totalMargin - capCofre).toFixed(2));
+    capitalState.patrimonioTotal = parseFloat((capitalState.capitalLivre + capitalState.capitalEmNegociacao + capCofre + totalUnrealizedPnL).toFixed(2));
+
+    const audit = calculate24hAudit();
+    capitalState.pnl24h = audit.lucroLiquido24h;
+    capitalState.pnl24hPercent = parseFloat(((audit.lucroLiquido24h / capInicial) * 100).toFixed(2));
+    capitalState.totalTrades24h = audit.totalOperacoes;
+    capitalState.winRate24h = audit.winRate;
   }
 
   // API ROUTES
@@ -293,19 +309,8 @@ async function startServer() {
   });
 
   app.get("/api/stats", (req, res) => {
-    // Recalculate margins and total
-    const totalMargin = activePositions.reduce((acc, p) => acc + (Number(p.capitalEmRisco) || 50), 0);
-    const livre = !isNaN(Number(capitalState.capitalLivre)) ? Number(capitalState.capitalLivre) : 1000;
-    const cofre = !isNaN(Number(capitalState.capitalCofre)) ? Number(capitalState.capitalCofre) : 0;
-    capitalState.capitalEmNegociacao = parseFloat(totalMargin.toFixed(2));
-    capitalState.patrimonioTotal = parseFloat((livre + capitalState.capitalEmNegociacao + cofre).toFixed(2));
-
+    recalculateCapitalState();
     const audit = calculate24hAudit();
-    capitalState.pnl24h = audit.lucroLiquido24h;
-    const inicial = !isNaN(Number(capitalState.capitalInicial)) && capitalState.capitalInicial > 0 ? capitalState.capitalInicial : 1000;
-    capitalState.pnl24hPercent = parseFloat(((audit.lucroLiquido24h / inicial) * 100).toFixed(2));
-    capitalState.totalTrades24h = audit.totalOperacoes;
-    capitalState.winRate24h = audit.winRate;
 
     res.json({
       capital: capitalState,
@@ -694,12 +699,12 @@ async function startServer() {
   let lastAutoScanTime = "--:--:--";
   let lastAutoScanResult = "Motor autônomo iniciado e ativo";
 
-  // Iniciar loop autônomo automaticamente no arranque do servidor
+  // Iniciar loop autônomo automaticamente no arranque do servidor (Ciclo a cada 10 segundos)
   autoTraderInterval = setInterval(async () => {
     if (autoTraderEnabled) {
       await executeAutoTraderCycle();
     }
-  }, 30000);
+  }, 10000);
   // Executar primeiro ciclo em background imediatamente
   setTimeout(() => {
     executeAutoTraderCycle();
@@ -813,6 +818,7 @@ async function startServer() {
       }
     }
 
+    recalculateCapitalState();
     lastAutoScanResult = `Varredura de mercado concluída — ${activePositions.length} posições ativas sob monitoramento contínuo.`;
     return lastAutoScanResult;
   }
