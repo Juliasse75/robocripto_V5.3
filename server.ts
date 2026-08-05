@@ -7,6 +7,8 @@ import { INITIAL_CAPITAL, INITIAL_BOT_STATUS, INITIAL_ACTIVE_POSITIONS, INITIAL_
 import { CapitalState, TradeLog, ActivePosition, BotStatus, AuditSummary24h, MarketSignal } from "./src/types";
 import { binanceService } from "./src/services/binance";
 import { calculateRSI, calculateEMA, calculateATR } from "./src/services/indicators";
+import { CombinatorialTimeSeriesSplitter, KlineCandle } from "./src/utils/combinatorialSplitter";
+import { evaluateCPCVPaths, StrategyParams } from "./src/utils/cpcvEvaluator";
 
 const getServerDir = () => {
   if (typeof __dirname !== "undefined") {
@@ -448,6 +450,95 @@ async function startServer() {
     }
 
     res.json(result);
+  });
+
+  // Endpoint para Validação Cruzada CPCV (Combinatorial Purged & Embargoed Cross-Validation)
+  app.get(["/api/cpcv-eval", "/api/cpcv/eval"], async (req, res) => {
+    try {
+      const nBlocks = parseInt(req.query.nBlocks as string || "6", 10);
+      const kTestBlocks = parseInt(req.query.kTestBlocks as string || "2", 10);
+      const symbol = (req.query.symbol as string || "BTCUSDT").toUpperCase();
+      const purgeHours = parseFloat(req.query.purgeHours as string || "4");
+      const embargoPct = parseFloat(req.query.embargoPct as string || "0.02");
+
+      let klines: KlineCandle[] = [];
+      try {
+        const binanceKlines = await binanceService.getKlines(symbol, "1h", 1000);
+        if (Array.isArray(binanceKlines) && binanceKlines.length >= 120) {
+          klines = binanceKlines.map((k: any) => ({
+            openTime: k.openTime,
+            closeTime: k.closeTime,
+            open: k.open,
+            high: k.high,
+            low: k.low,
+            close: k.close,
+            volume: k.volume,
+          }));
+        }
+      } catch (e) {
+        // Fallback para gerador sintético em caso de ausência de rede
+      }
+
+      if (klines.length < 120) {
+        const now = Date.now();
+        const hourMs = 3600 * 1000;
+        let basePrice = 67000;
+        klines = [];
+
+        for (let i = 999; i >= 0; i--) {
+          const openTime = now - i * hourMs;
+          const closeTime = openTime + hourMs - 1;
+          const pctChange = (Math.random() - 0.49) * 0.015;
+          const open = basePrice;
+          const close = open * (1 + pctChange);
+          const high = Math.max(open, close) * (1 + Math.random() * 0.005);
+          const low = Math.min(open, close) * (1 - Math.random() * 0.005);
+          const volume = Math.random() * 500 + 100;
+
+          klines.push({ openTime, closeTime, open, high, low, close, volume });
+          basePrice = close;
+        }
+      }
+
+      // Executar Pipeline CPCV (Geração Combinatória + Expurgo + Embargo)
+      const cpcvPaths = await CombinatorialTimeSeriesSplitter.runPipeline(klines, {
+        nBlocks,
+        kTestBlocks,
+        maxTradeDurationMs: purgeHours * 3600 * 1000,
+        embargoPercentage: embargoPct,
+      });
+
+      // Avaliar parâmetros da estratégia em cada caminho
+      const strategyParams: StrategyParams = {
+        rsiPeriod: 14,
+        rsiOversold: 44,
+        takeProfitPct: 0.012,
+        stopLossPct: 0.008,
+        feePct: 0.0005,
+      };
+
+      const report = evaluateCPCVPaths(cpcvPaths, strategyParams);
+
+      res.json({
+        success: true,
+        symbol,
+        klinesCount: klines.length,
+        config: {
+          nBlocks,
+          kTestBlocks,
+          purgeHours,
+          embargoPct,
+          totalCombinations: CombinatorialTimeSeriesSplitter.calculateCombinationsCount(nBlocks, kTestBlocks),
+        },
+        report,
+      });
+    } catch (error: any) {
+      console.error("[CPCV EVAL ERROR]", error);
+      res.status(500).json({
+        success: false,
+        error: error.message || "Falha na avaliação CPCV",
+      });
+    }
   });
 
   // Limpar Posições Teste e Restaurar Saldo Inicial
